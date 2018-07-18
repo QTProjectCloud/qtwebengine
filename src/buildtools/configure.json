@@ -7,7 +7,8 @@
     ],
     "commandline": {
         "options": {
-            "webengine-core": "boolean",
+            "build-qtwebengine": "boolean",
+            "build-qtpdf": "boolean",
             "webengine-jumbo-build": { "type": "optionalString", "name": "merge_limit"}
         }
     },
@@ -354,15 +355,32 @@
         }
     },
     "features": {
-        "webengine-core": {
+        "build-qtwebengine-core": {
             "label": "Support Qt WebEngine Core",
             "purpose": "Provides WebEngine Core support.",
+            "autoDetect": "false",
             "condition": "module.gui
                          && features.webengine-python2
                          && features.webengine-gperf
                          && features.webengine-bison
                          && features.webengine-flex
                          && (!features.xcb || features.webengine-ozone-x11)",
+            "output": [ "privateFeature" ]
+        },
+        "build-qtpdf": {
+             "label": "Support Qt PDF rendering module",
+             "purpose": "Enables building the Qt PDF rendering module.",
+             "condition": "module.gui
+                            && features.webengine-python2
+                            && features.webengine-gperf
+                            && features.webengine-bison
+                            && features.webengine-flex",
+             "output": [ "privateFeature" ]
+        },
+        "webengine-developer-build": {
+            "label": "Developer build",
+            "purpose": "Enables the developer build configuration.",
+            "autoDetect": "features.private_tests",
             "output": [ "privateFeature" ]
         },
         "webengine-python2": {
@@ -393,7 +411,7 @@
             "condition": "tests.webengine-ninja",
             "output": [ "privateFeature" ]
         },
-           "webengine-system-fontconfig": {
+        "webengine-system-fontconfig": {
             "label": "fontconfig",
             "condition": "libs.webengine-fontconfig",
             "output": [ "privateFeature" ]
@@ -658,13 +676,14 @@
             "entries": [
                 "webengine-system-ninja",
                 "webengine-system-gn",
-                 {
+                {
                     "message": "Jumbo Build Merge Limit",
                     "type": "jumboBuild"
                 },
+                "webengine-developer-build",
                 {
                     "section": "Required system libraries",
-                    "condition": "config.unix && !config.macos && features.webengine-core",
+                    "condition": "config.unix && !config.macos && features.build-qtwebengine-core",
                     "entries": [
                         "webengine-system-fontconfig",
                         "webengine-system-dbus",
@@ -675,7 +694,7 @@
                 },
                 {
                     "section": "Required system libraries for qpa-xcb",
-                    "condition": "config.unix && !config.macos && features.webengine-core",
+                    "condition": "config.unix && !config.macos && features.build-qtwebengine-core",
                     "entries": [
                         "webengine-system-x11",
                         "webengine-system-libdrm",

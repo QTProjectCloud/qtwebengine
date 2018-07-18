@@ -6,7 +6,7 @@
         "gui-private",
         "printsupport"
     ],
-    "condition": "features.webengine-core",
+    "condition": "features.build-qtwebengine-core",
     "testDir": "../../config.tests",
     "commandline": {
         "options": {
@@ -108,15 +108,8 @@
         "webengine-embedded-build": {
             "label": "Embedded build",
             "purpose": "Enables the embedded build configuration.",
-            "section": "WebEngine",
             "condition": "config.unix",
             "autoDetect": "tests.webengine-embedded-build",
-            "output": [ "privateFeature" ]
-        },
-        "webengine-developer-build": {
-            "label": "Developer build",
-            "purpose": "Enables the developer build configuration.",
-            "autoDetect": "features.private_tests",
             "output": [ "privateFeature" ]
         },
         "webengine-alsa": {
@@ -149,14 +142,12 @@
         "webengine-pepper-plugins": {
             "label": "Pepper Plugins",
             "purpose": "Enables use of Pepper Flash plugins.",
-            "section": "WebEngine",
             "autoDetect": "!features.webengine-embedded-build",
             "output": [ "privateFeature" ]
         },
         "webengine-printing-and-pdf": {
             "label": "Printing and PDF",
             "purpose": "Provides printing and output to PDF.",
-            "section": "WebEngine",
             "condition": "module.printsupport && features.printer",
             "autoDetect": "!features.webengine-embedded-build",
             "output": [ "privateFeature" ]
@@ -171,7 +162,6 @@
         "webengine-proprietary-codecs": {
             "label": "Proprietary Codecs",
             "purpose": "Enables the use of proprietary codecs such as h.264/h.265 and MP3.",
-            "section": "WebEngine",
             "autoDetect": false,
             "output": [ "privateFeature" ]
         },
@@ -185,13 +175,11 @@
         "webengine-spellchecker": {
             "label": "Spellchecker",
             "purpose": "Provides a spellchecker.",
-            "section": "WebEngine",
             "output": [ "publicFeature" ]
         },
         "webengine-native-spellchecker": {
             "label": "Native Spellchecker",
             "purpose": "Use the system's native spellchecking engine.",
-            "section": "WebEngine",
             "autoDetect": false,
             "condition": "config.macos && features.webengine-spellchecker",
             "output": [ "publicFeature" ]
@@ -207,7 +195,6 @@
         "webengine-webrtc": {
             "label": "WebRTC",
             "purpose": "Provides WebRTC support.",
-            "section": "WebEngine",
             "autoDetect": "!features.webengine-embedded-build",
             "output": [ "privateFeature" ]
         },
@@ -282,10 +269,9 @@
     "summary": [
         {
             "section": "Qt WebEngineCore",
-            "condition": "features.webengine-core",
+            "condition": "features.build-qtwebengine-core",
             "entries": [
                 "webengine-embedded-build",
-                "webengine-developer-build",
                 "webengine-full-debug-info",
                 "webengine-pepper-plugins",
                 "webengine-printing-and-pdf",
