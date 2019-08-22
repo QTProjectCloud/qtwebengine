@@ -44,9 +44,10 @@ isWebEngineCoreBuild(){
 
     qtConfig(build-qtpdf) {
         pdf.depends = buildtools
-        SUBDIRS += buildtools pdf
+        SUBDIRS += buildtools pdf plugins
         qtConfig(pdf-widgets) {
            pdfwidgets.depends = pdf
+           plugins.depends = pdf
            SUBDIRS += pdfwidgets
         }
     }
