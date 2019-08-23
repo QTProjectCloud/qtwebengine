@@ -385,7 +385,10 @@
                             && features.webengine-python2
                             && features.webengine-gperf
                             && features.webengine-bison
-                            && features.webengine-flex",
+                            && features.webengine-flex
+                            && tests.webengine-platform
+                            && tests.webengine-architecture
+                            && (!config.win32 || features.webengine-winversion)",
              "output": [ "privateFeature" ]
         },
         "webengine-developer-build": {
