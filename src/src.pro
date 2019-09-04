@@ -51,7 +51,7 @@ qtConfig(build-qtpdf):qtConfig(webengine-core-support) {
 }
 
 !qtConfig(webengine-core-support): if (qtConfig(build-qtwebengine-core)|qtConfig(build-qtpdf)) {
-    !qtwebengine_checkError():!isEmpty(skipBuildReason):!build_pass {
+    !qtwebengine_makeCheckError():!isEmpty(skipBuildReason):!build_pass {
         errorbuild.commands = @echo Modules will not be built. $${skipBuildReason}
         errorbuild.CONFIG = phony
         QMAKE_EXTRA_TARGETS += errorbuild
