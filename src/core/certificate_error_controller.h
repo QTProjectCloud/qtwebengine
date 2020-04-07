@@ -85,8 +85,7 @@ public:
         CertificateValidityTooLong = -213,
         CertificateTransparencyRequired = -214,
         CertificateSymantecLegacy = -215,
-
-        CertificateErrorEnd = -216 // not an error, just an enum boundary
+        CertificateErrorEnd = -217 // not an error, just an enum boundary
     };
 
     CertificateError error() const;
@@ -96,7 +95,7 @@ public:
     QString errorString() const;
     QDateTime validStart() const;
     QDateTime validExpiry() const;
-    QList<QSslCertificate> chain() const;
+    QList<QSslCertificate> certificateChain() const;
 
     void accept(bool);
 

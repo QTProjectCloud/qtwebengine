@@ -67,6 +67,7 @@
 #include "base/task/sequence_manager/thread_controller_with_message_pump_impl.h"
 #include "base/values.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/text_input_manager.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/child_process_security_policy.h"
@@ -84,8 +85,9 @@
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
-#include "content/public/common/webrtc_ip_handling_policy.h"
 #include "extensions/buildflags/buildflags.h"
+#include "third_party/blink/public/common/page/page_zoom.h"
+#include "third_party/blink/public/common/peerconnection/webrtc_ip_handling_policy.h"
 #include "third_party/blink/public/web/web_media_player_action.h"
 #include "printing/buildflags/buildflags.h"
 #include "ui/base/clipboard/clipboard.h"
@@ -134,7 +136,7 @@ namespace QtWebEngineCore {
 
 static const int kTestWindowWidth = 800;
 static const int kTestWindowHeight = 600;
-static const int kHistoryStreamVersion = 3;
+static const int kHistoryStreamVersion = 4;
 
 static QVariant fromJSValue(const base::Value *result)
 {
@@ -239,7 +241,6 @@ static std::unique_ptr<content::WebContents> createBlankWebContents(WebContentsA
 {
     content::WebContents::CreateParams create_params(browserContext, NULL);
     create_params.routing_id = MSG_ROUTING_NONE;
-    create_params.initial_size = gfx::Size(kTestWindowWidth, kTestWindowHeight);
     create_params.initially_hidden = true;
 
     std::unique_ptr<content::WebContents> webContents = content::WebContents::Create(create_params);
@@ -279,6 +280,9 @@ static void serializeNavigationHistory(content::NavigationController &controller
             output << entry->GetIsOverridingUserAgent();
             output << static_cast<qint64>(entry->GetTimestamp().ToInternalValue());
             output << entry->GetHttpStatusCode();
+            // kHistoryStreamVersion >= 4
+            content::FaviconStatus &favicon = entry->GetFavicon();
+            output << (favicon.valid ? toQt(favicon.url) : QUrl());
         }
     }
 }
@@ -287,8 +291,8 @@ static void deserializeNavigationHistory(QDataStream &input, int *currentIndex, 
 {
     int version;
     input >> version;
-    if (version != kHistoryStreamVersion) {
-        // We do not try to decode previous history stream versions.
+    if (version < 3 || version > kHistoryStreamVersion) {
+        // We do not try to decode history stream versions before 3.
         // Make sure that our history is cleared and mark the rest of the stream as invalid.
         input.setStatus(QDataStream::ReadCorruptData);
         *currentIndex = -1;
@@ -301,7 +305,7 @@ static void deserializeNavigationHistory(QDataStream &input, int *currentIndex, 
     entries->reserve(count);
     // Logic taken from SerializedNavigationEntry::ReadFromPickle and ToNavigationEntries.
     for (int i = 0; i < count; ++i) {
-        QUrl virtualUrl, referrerUrl, originalRequestUrl;
+        QUrl virtualUrl, referrerUrl, originalRequestUrl, iconUrl;
         QString title;
         QByteArray pageState;
         qint32 transitionType, referrerPolicy;
@@ -319,6 +323,9 @@ static void deserializeNavigationHistory(QDataStream &input, int *currentIndex, 
         input >> isOverridingUserAgent;
         input >> timestamp;
         input >> httpStatusCode;
+        // kHistoryStreamVersion >= 4
+        if (version >= 4)
+            input >> iconUrl;
 
         // If we couldn't unpack the entry successfully, abort everything.
         if (input.status() != QDataStream::Ok) {
@@ -351,8 +358,33 @@ static void deserializeNavigationHistory(QDataStream &input, int *currentIndex, 
         entry->SetIsOverridingUserAgent(isOverridingUserAgent);
         entry->SetTimestamp(base::Time::FromInternalValue(timestamp));
         entry->SetHttpStatusCode(httpStatusCode);
+        if (iconUrl.isValid()) {
+            // Note: we don't set .image below as we don't have it and chromium will refetch favicon
+            // anyway. However, we set .url and .valid to let QWebEngineHistory items restored from
+            // a stream receive valid icon URLs via our getNavigationEntryIconUrl calls.
+            content::FaviconStatus &favicon = entry->GetFavicon();
+            favicon.url = toGurl(iconUrl);
+            favicon.valid = true;
+        }
         entries->push_back(std::move(entry));
     }
+}
+
+static void Navigate(WebContentsAdapter *adapter, const content::NavigationController::LoadURLParams &params)
+{
+    Q_ASSERT(adapter);
+    adapter->webContents()->GetController().LoadURLWithParams(params);
+    adapter->focusIfNecessary();
+    adapter->resetSelection();
+}
+
+static void NavigateTask(QWeakPointer<WebContentsAdapter> weakAdapter, const content::NavigationController::LoadURLParams &params)
+{
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    const auto adapter = weakAdapter.toStrongRef();
+    if (!adapter)
+        return;
+    Navigate(adapter.get(), params);
 }
 
 namespace {
@@ -470,7 +502,6 @@ void WebContentsAdapter::initialize(content::SiteInstance *site)
     // Create our own if a WebContents wasn't provided at construction.
     if (!m_webContents) {
         content::WebContents::CreateParams create_params(m_profileAdapter->profile(), site);
-        create_params.initial_size = gfx::Size(kTestWindowWidth, kTestWindowHeight);
         create_params.initially_hidden = true;
         m_webContents = content::WebContents::Create(create_params);
     }
@@ -531,8 +562,8 @@ void WebContentsAdapter::initializeRenderPrefs()
     else
         rendererPrefs->webrtc_ip_handling_policy =
                 m_adapterClient->webEngineSettings()->testAttribute(WebEngineSettings::WebRTCPublicInterfacesOnly)
-                ? content::kWebRTCIPHandlingDefaultPublicInterfaceOnly
-                : content::kWebRTCIPHandlingDefault;
+                ? blink::kWebRTCIPHandlingDefaultPublicInterfaceOnly
+                : blink::kWebRTCIPHandlingDefault;
 #endif
     // Set web-contents font settings to the default font settings as Chromium constantly overrides
     // the global font defaults with the font settings of the latest web-contents created.
@@ -543,7 +574,7 @@ void WebContentsAdapter::initializeRenderPrefs()
     rendererPrefs->use_autohinter = params.autohinter;
     rendererPrefs->use_bitmaps = params.use_bitmaps;
     rendererPrefs->subpixel_rendering = params.subpixel_rendering;
-    m_webContents->GetRenderViewHost()->SyncRendererPrefs();
+    m_webContents->SyncRendererPrefs();
 }
 
 bool WebContentsAdapter::canGoBack() const
@@ -691,23 +722,12 @@ void WebContentsAdapter::load(const QWebEngineHttpRequest &request)
         }
     }
 
-    auto navigate = [](QWeakPointer<WebContentsAdapter> weakAdapter, const content::NavigationController::LoadURLParams &params) {
-        const auto adapter = weakAdapter.toStrongRef();
-        if (!adapter)
-            return;
-        adapter->webContents()->GetController().LoadURLWithParams(params);
-        // Follow chrome::Navigate and invalidate the URL immediately.
-        adapter->m_webContentsDelegate->NavigationStateChanged(adapter->webContents(), content::INVALIDATE_TYPE_URL);
-        adapter->focusIfNecessary();
-    };
-
-    QWeakPointer<WebContentsAdapter> weakThis(sharedFromThis());
     if (resizeNeeded) {
         // Schedule navigation on the event loop.
-        base::PostTaskWithTraits(FROM_HERE, {content::BrowserThread::UI},
-                                 base::BindOnce(navigate, std::move(weakThis), std::move(params)));
+        base::PostTask(FROM_HERE, {content::BrowserThread::UI},
+                       base::BindOnce(&NavigateTask, sharedFromThis().toWeakRef(), std::move(params)));
     } else {
-        navigate(std::move(weakThis), params);
+        Navigate(this, params);
     }
 }
 
@@ -740,9 +760,7 @@ void WebContentsAdapter::setContent(const QByteArray &data, const QString &mimeT
     params.can_load_local_resources = true;
     params.transition_type = ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_API);
     params.override_user_agent = content::NavigationController::UA_OVERRIDE_TRUE;
-    m_webContents->GetController().LoadURLWithParams(params);
-    focusIfNecessary();
-    m_webContents->CollapseSelection();
+    Navigate(this, params);
 }
 
 void WebContentsAdapter::save(const QString &filePath, int savePageFormat)
@@ -755,7 +773,7 @@ void WebContentsAdapter::save(const QString &filePath, int savePageFormat)
 QUrl WebContentsAdapter::activeUrl() const
 {
     CHECK_INITIALIZED(QUrl());
-    return m_webContentsDelegate->url();
+    return m_webContentsDelegate->url(webContents());
 }
 
 QUrl WebContentsAdapter::requestedUrl() const
@@ -778,7 +796,7 @@ QUrl WebContentsAdapter::iconUrl() const
 {
     CHECK_INITIALIZED(QUrl());
     if (content::NavigationEntry* entry = m_webContents->GetController().GetVisibleEntry()) {
-        content::FaviconStatus favicon = entry->GetFavicon();
+        content::FaviconStatus &favicon = entry->GetFavicon();
         if (favicon.valid)
             return toQt(favicon.url);
     }
@@ -935,7 +953,7 @@ QUrl WebContentsAdapter::getNavigationEntryIconUrl(int index)
     content::NavigationEntry *entry = m_webContents->GetController().GetEntryAtIndex(index);
     if (!entry)
         return QUrl();
-    content::FaviconStatus favicon = entry->GetFavicon();
+    content::FaviconStatus &favicon = entry->GetFavicon();
     return favicon.valid ? toQt(favicon.url) : QUrl();
 }
 
@@ -955,10 +973,10 @@ void WebContentsAdapter::serializeNavigationHistory(QDataStream &output)
 void WebContentsAdapter::setZoomFactor(qreal factor)
 {
     CHECK_INITIALIZED();
-    if (factor < content::kMinimumZoomFactor || factor > content::kMaximumZoomFactor)
+    if (factor < blink::kMinimumPageZoomFactor || factor > blink::kMaximumPageZoomFactor)
         return;
 
-    double zoomLevel = content::ZoomFactorToZoomLevel(static_cast<double>(factor));
+    double zoomLevel = blink::PageZoomFactorToZoomLevel(static_cast<double>(factor));
     content::HostZoomMap *zoomMap = content::HostZoomMap::GetForWebContents(m_webContents.get());
 
     if (zoomMap) {
@@ -971,7 +989,7 @@ void WebContentsAdapter::setZoomFactor(qreal factor)
 qreal WebContentsAdapter::currentZoomFactor() const
 {
     CHECK_INITIALIZED(1);
-    return content::ZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(m_webContents.get()));
+    return blink::PageZoomLevelToZoomFactor(content::HostZoomMap::GetZoomLevel(m_webContents.get()));
 }
 
 ProfileQt* WebContentsAdapter::profile()
@@ -992,7 +1010,10 @@ QAccessibleInterface *WebContentsAdapter::browserAccessible()
     CHECK_INITIALIZED(nullptr);
     content::RenderViewHost *rvh = m_webContents->GetRenderViewHost();
     Q_ASSERT(rvh);
-    content::BrowserAccessibilityManager *manager = static_cast<content::RenderFrameHostImpl*>(rvh->GetMainFrame())->GetOrCreateBrowserAccessibilityManager();
+    content::RenderFrameHostImpl *rfh = static_cast<content::RenderFrameHostImpl *>(rvh->GetMainFrame());
+    if (!rfh)
+        return nullptr;
+    content::BrowserAccessibilityManager *manager = rfh->GetOrCreateBrowserAccessibilityManager();
     if (!manager) // FIXME!
         return nullptr;
     content::BrowserAccessibility *acc = manager->GetRoot();
@@ -1125,6 +1146,17 @@ bool WebContentsAdapter::recentlyAudible() const
 {
     CHECK_INITIALIZED(false);
     return m_webContents->IsCurrentlyAudible();
+}
+
+qint64 WebContentsAdapter::renderProcessPid() const
+{
+    CHECK_INITIALIZED(0);
+
+    content::RenderProcessHost *renderProcessHost = m_webContents->GetMainFrame()->GetProcess();
+    const base::Process &process = renderProcessHost->GetProcess();
+    if (!process.IsValid())
+        return 0;
+    return process.Pid();
 }
 
 void WebContentsAdapter::copyImageAt(const QPoint &location)
@@ -1439,8 +1471,7 @@ void WebContentsAdapter::startDragging(QObject *dragSource, const content::DropD
     });
 
     QMimeData *mimeData = mimeDataFromDropData(*m_currentDropData);
-    if (handleDropDataFileContents(dropData, mimeData))
-        allowedActions = Qt::MoveAction;
+    handleDropDataFileContents(dropData, mimeData);
 
     drag->setMimeData(mimeData);
     if (!pixmap.isNull()) {
@@ -1665,6 +1696,17 @@ bool WebContentsAdapter::hasFocusedFrame() const
     return m_webContents->GetFocusedFrame() != nullptr;
 }
 
+void WebContentsAdapter::resetSelection()
+{
+    CHECK_INITIALIZED();
+    // unconditionally clears the selection in contrast to CollapseSelection, which checks focus state first
+    if (auto rwhv = static_cast<RenderWidgetHostViewQt *>(m_webContents->GetRenderWidgetHostView())) {
+        if (auto mgr = rwhv->GetTextInputManager())
+            if (auto selection = const_cast<content::TextInputManager::TextSelection *>(mgr->GetTextSelection(rwhv)))
+                selection->SetSelection(base::string16(), 0, gfx::Range(), false);
+    }
+}
+
 WebContentsAdapterClient::RenderProcessTerminationStatus
 WebContentsAdapterClient::renderProcessExitStatus(int terminationStatus) {
     auto status = WebContentsAdapterClient::RenderProcessTerminationStatus(-1);
@@ -1881,7 +1923,7 @@ void WebContentsAdapter::discard()
     // Based on TabLifecycleUnitSource::TabLifecycleUnit::FinishDiscard
 
     if (m_webContents->IsLoading()) {
-        m_webContentsDelegate->didFailLoad(m_webContentsDelegate->url(), net::Error::ERR_ABORTED,
+        m_webContentsDelegate->didFailLoad(m_webContentsDelegate->url(webContents()), net::Error::ERR_ABORTED,
                                            QStringLiteral("Discarded"));
     }
 

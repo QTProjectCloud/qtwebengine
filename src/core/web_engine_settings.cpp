@@ -50,10 +50,12 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/web_preferences.h"
-#include "content/public/common/webrtc_ip_handling_policy.h"
 #include "media/base/media_switches.h"
+#include "third_party/blink/public/common/peerconnection/webrtc_ip_handling_policy.h"
 #include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/events/event_switches.h"
+#include "ui/native_theme/native_theme.h"
 
 #include <QFont>
 #include <QTimer>
@@ -126,9 +128,8 @@ void WebEngineSettings::overrideWebPreferences(content::WebContents *webContents
         webPreferences.reset(new content::WebPreferences(*prefs));
 
     if (webContents
-            && webContents->GetRenderViewHost()
             && applySettingsToRendererPreferences(webContents->GetMutableRendererPrefs())) {
-        webContents->GetRenderViewHost()->SyncRendererPrefs();
+        webContents->SyncRendererPrefs();
     }
 }
 
@@ -246,7 +247,7 @@ void WebEngineSettings::initDefaults()
         s_defaultAttributes.insert(LinksIncludedInFocusChain, true);
         s_defaultAttributes.insert(LocalStorageEnabled, true);
         s_defaultAttributes.insert(LocalContentCanAccessRemoteUrls, false);
-        s_defaultAttributes.insert(XSSAuditingEnabled, true);
+        s_defaultAttributes.insert(XSSAuditingEnabled, false);
         s_defaultAttributes.insert(SpatialNavigationEnabled, false);
         s_defaultAttributes.insert(LocalContentCanAccessFileUrls, true);
         s_defaultAttributes.insert(HyperlinkAuditingEnabled, false);
@@ -338,7 +339,7 @@ void WebEngineSettings::doApply()
     m_adapter->updateWebPreferences(*webPreferences.data());
 
     if (applySettingsToRendererPreferences(m_adapter->webContents()->GetMutableRendererPrefs()))
-        m_adapter->webContents()->GetRenderViewHost()->SyncRendererPrefs();
+        m_adapter->webContents()->SyncRendererPrefs();
 }
 
 void WebEngineSettings::applySettingsToWebPreferences(content::WebPreferences *prefs)
@@ -364,7 +365,6 @@ void WebEngineSettings::applySettingsToWebPreferences(content::WebPreferences *p
     prefs->local_storage_enabled = testAttribute(LocalStorageEnabled);
     prefs->databases_enabled = testAttribute(LocalStorageEnabled);
     prefs->allow_universal_access_from_file_urls = testAttribute(LocalContentCanAccessRemoteUrls);
-    prefs->xss_auditor_enabled = testAttribute(XSSAuditingEnabled);
     prefs->spatial_navigation_enabled = testAttribute(SpatialNavigationEnabled);
     prefs->allow_file_access_from_file_urls = testAttribute(LocalContentCanAccessFileUrls);
     prefs->hyperlink_auditing_enabled = testAttribute(HyperlinkAuditingEnabled);
@@ -399,6 +399,44 @@ void WebEngineSettings::applySettingsToWebPreferences(content::WebPreferences *p
     prefs->minimum_font_size = fontSize(MinimumFontSize);
     prefs->minimum_logical_font_size = fontSize(MinimumLogicalFontSize);
     prefs->default_encoding = defaultTextEncoding().toStdString();
+
+    // Set the theme colors. Based on chrome_content_browser_client.cc:
+    const ui::NativeTheme *webTheme = ui::NativeTheme::GetInstanceForWeb();
+    if (webTheme) {
+        switch (webTheme->GetPreferredColorScheme()) {
+          case ui::NativeTheme::PreferredColorScheme::kDark:
+            prefs->preferred_color_scheme = blink::PreferredColorScheme::kDark;
+            break;
+          case ui::NativeTheme::PreferredColorScheme::kLight:
+            prefs->preferred_color_scheme = blink::PreferredColorScheme::kLight;
+            break;
+          case ui::NativeTheme::PreferredColorScheme::kNoPreference:
+            prefs->preferred_color_scheme = blink::PreferredColorScheme::kNoPreference;
+        }
+    }
+
+    // Apply native CaptionStyle parameters.
+    base::Optional<ui::CaptionStyle> style;
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kForceCaptionStyle)) {
+        style = ui::CaptionStyle::FromSpec(
+                    base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switches::kForceCaptionStyle));
+    }
+
+    // Apply system caption style.
+    if (!style && webTheme)
+        style = webTheme->GetSystemCaptionStyle();
+
+    if (style) {
+        prefs->text_track_background_color = style->background_color;
+        prefs->text_track_text_color = style->text_color;
+        prefs->text_track_text_size = style->text_size;
+        prefs->text_track_text_shadow = style->text_shadow;
+        prefs->text_track_font_family = style->font_family;
+        prefs->text_track_font_variant = style->font_variant;
+        prefs->text_track_window_color = style->window_color;
+        prefs->text_track_window_padding = style->window_padding;
+        prefs->text_track_window_radius = style->window_radius;
+    }
 }
 
 bool WebEngineSettings::applySettingsToRendererPreferences(blink::mojom::RendererPreferences *prefs)
@@ -407,8 +445,8 @@ bool WebEngineSettings::applySettingsToRendererPreferences(blink::mojom::Rendere
 #if QT_CONFIG(webengine_webrtc)
     if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kForceWebRtcIPHandlingPolicy)) {
         std::string webrtc_ip_handling_policy = testAttribute(WebEngineSettings::WebRTCPublicInterfacesOnly)
-                                              ? content::kWebRTCIPHandlingDefaultPublicInterfaceOnly
-                                              : content::kWebRTCIPHandlingDefault;
+                                              ? blink::kWebRTCIPHandlingDefaultPublicInterfaceOnly
+                                              : blink::kWebRTCIPHandlingDefault;
         if (prefs->webrtc_ip_handling_policy != webrtc_ip_handling_policy) {
             prefs->webrtc_ip_handling_policy = webrtc_ip_handling_policy;
             changed = true;
