@@ -46,7 +46,6 @@
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/download_request_utils.h"
 #include "content/public/browser/download_utils.h"
-#include "content/public/common/resource_type.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 
@@ -71,8 +70,8 @@ void onPdfStreamIntercepted(const GURL &original_url, std::string extension_id, 
         return;
 
     WebEngineSettings *settings = contentsDelegate->webEngineSettings();
-    if (!settings->testAttribute(WebEngineSettings::PdfViewerEnabled)
-        || !settings->testAttribute(WebEngineSettings::PluginsEnabled)) {
+    if (!settings->testAttribute(QWebEngineSettings::PdfViewerEnabled)
+        || !settings->testAttribute(QWebEngineSettings::PluginsEnabled)) {
         // If the applications has been set up to always download PDF files to open them in an
         // external viewer, trigger the download.
         std::unique_ptr<download::DownloadUrlParameters> params(
@@ -104,7 +103,7 @@ PluginResponseInterceptorURLLoaderThrottle::PluginResponseInterceptorURLLoaderTh
 {}
 
 void PluginResponseInterceptorURLLoaderThrottle::WillProcessResponse(const GURL &response_url,
-                                                                     network::ResourceResponseHead *response_head,
+                                                                     network::mojom::URLResponseHead *response_head,
                                                                      bool *defer)
 {
     Q_UNUSED(defer);
@@ -124,6 +123,8 @@ void PluginResponseInterceptorURLLoaderThrottle::WillProcessResponse(const GURL 
         extension_id = extension_misc::kPdfExtensionId;
     if (extension_id.empty())
         return;
+
+    *defer = true;
 
     base::PostTask(FROM_HERE, {content::BrowserThread::UI},
                    base::BindOnce(&onPdfStreamIntercepted,

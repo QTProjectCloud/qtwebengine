@@ -35,11 +35,11 @@
 #include <QtWebEngineCore/qwebenginecookiestore.h>
 #include <QtWebEngineCore/qwebengineurlscheme.h>
 #include <QtWebEngineCore/qwebengineurlschemehandler.h>
+#include <QtWebEngineCore/qwebenginesettings.h>
 #include <QtWebEngineWidgets/qwebengineprofile.h>
 #include <QtWebEngineWidgets/qwebenginepage.h>
-#include <QtWebEngineWidgets/qwebenginesettings.h>
 #include <QtWebEngineWidgets/qwebengineview.h>
-#include <QtWebEngineWidgets/qwebenginedownloaditem.h>
+#include <QtWebEngineCore/qwebenginedownloadrequest.h>
 
 #if QT_CONFIG(webengine_webchannel)
 #include <QWebChannel>
@@ -136,12 +136,13 @@ void tst_QWebEngineProfile::privateProfile()
     QCOMPARE(otrProfile.httpCacheType(), QWebEngineProfile::MemoryHttpCache);
     QCOMPARE(otrProfile.persistentCookiesPolicy(), QWebEngineProfile::NoPersistentCookies);
     QCOMPARE(otrProfile.cachePath(), QString());
-    QCOMPARE(otrProfile.persistentStoragePath(), QString());
+    QCOMPARE(otrProfile.persistentStoragePath(), QStandardPaths::writableLocation(QStandardPaths::DataLocation)
+             + QStringLiteral("/QtWebEngine/OffTheRecord"));
     // TBD: setters do not really work
     otrProfile.setCachePath(QStringLiteral("/home/foo/bar"));
     QCOMPARE(otrProfile.cachePath(), QString());
     otrProfile.setPersistentStoragePath(QStringLiteral("/home/foo/bar"));
-    QCOMPARE(otrProfile.persistentStoragePath(), QString());
+    QCOMPARE(otrProfile.persistentStoragePath(), QStringLiteral("/home/foo/bar"));
     otrProfile.setHttpCacheType(QWebEngineProfile::DiskHttpCache);
     QCOMPARE(otrProfile.httpCacheType(), QWebEngineProfile::MemoryHttpCache);
     otrProfile.setPersistentCookiesPolicy(QWebEngineProfile::ForcePersistentCookies);
@@ -201,10 +202,8 @@ private:
         QString path = rr->requestPath();
         path.remove(0, 1);
 
-        if (rr->requestMethod() != "GET" || !resourceDir.exists(path))
-        {
-            rr->setResponseStatus(404);
-            rr->sendResponse();
+        if (rr->requestMethod() != "GET" || !resourceDir.exists(path)) {
+            rr->sendResponse(404);
             return;
         }
 
@@ -222,21 +221,10 @@ private:
     }
 };
 
-static bool loadSync(QWebEnginePage *page, const QUrl &url, bool ok = true)
-{
-    QSignalSpy spy(page, &QWebEnginePage::loadFinished);
-    page->load(url);
-    return (!spy.empty() || spy.wait(20000)) && (spy.front().value(0).toBool() == ok);
-}
-
-static bool loadSync(QWebEngineView *view, const QUrl &url, bool ok = true)
-{
-    return loadSync(view->page(), url, ok);
-}
-
 void tst_QWebEngineProfile::clearDataFromCache()
 {
     TestServer server;
+    QSignalSpy serverSpy(&server, &HttpServer::newRequest);
     QVERIFY(server.start());
 
     AutoDir cacheDir("./tst_QWebEngineProfile_clearDataFromCache");
@@ -247,6 +235,8 @@ void tst_QWebEngineProfile::clearDataFromCache()
 
     QWebEnginePage page(&profile);
     QVERIFY(loadSync(&page, server.url("/hedgehog.html")));
+    // Wait for GET /favicon.ico
+    QTRY_COMPARE(serverSpy.size(), 3);
 
     QVERIFY(cacheDir.exists("Cache"));
     qint64 sizeBeforeClear = totalSize(cacheDir);
@@ -255,7 +245,7 @@ void tst_QWebEngineProfile::clearDataFromCache()
     QTest::qWait(1000);
     QVERIFY(sizeBeforeClear > totalSize(cacheDir));
 
-    QVERIFY(server.stop());
+    (void)server.stop();
 }
 
 void tst_QWebEngineProfile::disableCache()
@@ -280,7 +270,7 @@ void tst_QWebEngineProfile::disableCache()
     QVERIFY(loadSync(&page, server.url("/hedgehog.html")));
     QVERIFY(cacheDir.exists("Cache"));
 
-    QVERIFY(server.stop());
+    (void)server.stop();
 }
 
 class RedirectingUrlSchemeHandler : public QWebEngineUrlSchemeHandler
@@ -842,10 +832,10 @@ void tst_QWebEngineProfile::httpAcceptLanguage()
 
 void tst_QWebEngineProfile::downloadItem()
 {
-    qRegisterMetaType<QWebEngineDownloadItem *>();
+    qRegisterMetaType<QWebEngineDownloadRequest *>();
     QWebEngineProfile testProfile;
     QWebEnginePage page(&testProfile);
-    QSignalSpy downloadSpy(&testProfile, SIGNAL(downloadRequested(QWebEngineDownloadItem *)));
+    QSignalSpy downloadSpy(&testProfile, SIGNAL(downloadRequested(QWebEngineDownloadRequest *)));
     page.load(QUrl::fromLocalFile(QCoreApplication::applicationFilePath()));
     QTRY_COMPARE(downloadSpy.count(), 1);
 }
@@ -873,7 +863,7 @@ void tst_QWebEngineProfile::changePersistentPath()
     QVERIFY(loadSync(&page, server.url("/hedgehog.html")));
     QVERIFY(dataDir2.exists());
 
-    QVERIFY(server.stop());
+    (void)server.stop();
 }
 
 void tst_QWebEngineProfile::changeHttpUserAgent()
@@ -881,7 +871,7 @@ void tst_QWebEngineProfile::changeHttpUserAgent()
     TestServer server;
     QVERIFY(server.start());
 
-    QVector<QByteArray> userAgents;
+    QList<QByteArray> userAgents;
     connect(&server, &HttpServer::newRequest, [&](HttpReqRep *rr) {
         if (rr->requestPath() == "/hedgehog.html")
             userAgents.push_back(rr->requestHeader(QByteArrayLiteral("user-agent")));
@@ -908,7 +898,7 @@ void tst_QWebEngineProfile::changeHttpAcceptLanguage()
     TestServer server;
     QVERIFY(server.start());
 
-    QVector<QByteArray> languages;
+    QList<QByteArray> languages;
     connect(&server, &HttpServer::newRequest, [&](HttpReqRep *rr) {
         if (rr->requestPath() == "/hedgehog.html")
             languages.push_back(rr->requestHeader(QByteArrayLiteral("accept-language")));
@@ -945,7 +935,8 @@ void tst_QWebEngineProfile::changeUseForGlobalCertificateVerification()
     profile.setUseForGlobalCertificateVerification(true);
     page.reset(new QWebEnginePage(&profile));
     QVERIFY(loadSync(page.get(), server.url("/hedgehog.html")));
-    QVERIFY(server.stop());
+    // Don't check for error: there can be disconnects during GET hedgehog.png.
+    (void)server.stop();
 }
 
 void tst_QWebEngineProfile::changePersistentCookiesPolicy()
@@ -969,7 +960,7 @@ void tst_QWebEngineProfile::changePersistentCookiesPolicy()
     QVERIFY(loadSync(&page, server.url("/hedgehog.html")));
     QVERIFY(dataDir.exists("Cookies"));
 
-    QVERIFY(server.stop());
+    (void)server.stop();
 }
 
 class InitiatorSpy : public QWebEngineUrlSchemeHandler

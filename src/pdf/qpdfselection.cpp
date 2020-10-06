@@ -67,8 +67,8 @@ QPdfSelection::QPdfSelection()
     \a text string, and which take up space on the page within the polygon
     regions given in \a bounds.
 */
-QPdfSelection::QPdfSelection(const QString &text, QVector<QPolygonF> bounds)
-  : d(new QPdfSelectionPrivate(text, bounds))
+QPdfSelection::QPdfSelection(const QString &text, QList<QPolygonF> bounds, QRectF boundingRect, int startIndex, int endIndex)
+  : d(new QPdfSelectionPrivate(text, bounds, boundingRect, startIndex, endIndex))
 {
 }
 
@@ -82,8 +82,19 @@ QPdfSelection::QPdfSelection(const QPdfSelection &other)
 {
 }
 
+QPdfSelection::QPdfSelection(QPdfSelection &&other) noexcept
+  : d(std::move(other.d))
+{
+}
+
 QPdfSelection::~QPdfSelection()
 {
+}
+
+QPdfSelection &QPdfSelection::operator=(const QPdfSelection &other)
+{
+    d = other.d;
+    return *this;
 }
 
 /*!
@@ -108,7 +119,7 @@ bool QPdfSelection::isValid() const
     are always rectangles; but in the future it may be possible to represent
     more complex regions.
 */
-QVector<QPolygonF> QPdfSelection::bounds() const
+QList<QPolygonF> QPdfSelection::bounds() const
 {
     return d->bounds;
 }
@@ -121,6 +132,36 @@ QVector<QPolygonF> QPdfSelection::bounds() const
 QString QPdfSelection::text() const
 {
     return d->text;
+}
+
+/*!
+    \property rect QPdfSelection::boundingRectangle
+
+    This property holds the overall bounding rectangle (convex hull) around \l bounds.
+*/
+QRectF QPdfSelection::boundingRectangle() const
+{
+    return d->boundingRect;
+}
+
+/*!
+    \property int QPdfSelection::startIndex
+
+    This property holds the index at the beginning of \l text within the full text on the page.
+*/
+int QPdfSelection::startIndex() const
+{
+    return d->startIndex;
+}
+
+/*!
+    \property int QPdfSelection::endIndex
+
+    This property holds the index at the end of \l text within the full text on the page.
+*/
+int QPdfSelection::endIndex() const
+{
+    return d->endIndex;
 }
 
 #if QT_CONFIG(clipboard)

@@ -104,15 +104,38 @@ void QQuickPdfSearchModel::setDocument(QQuickPdfDocument *document)
 
     \sa PathMultiline
 */
-QVector<QPolygonF> QQuickPdfSearchModel::currentResultBoundingPolygons() const
+QList<QPolygonF> QQuickPdfSearchModel::currentResultBoundingPolygons() const
 {
-    QVector<QPolygonF> ret;
+    QList<QPolygonF> ret;
     const auto &results = const_cast<QQuickPdfSearchModel *>(this)->resultsOnPage(m_currentPage);
     if (m_currentResult < 0 || m_currentResult >= results.count())
         return ret;
     const auto result = results[m_currentResult];
     for (auto rect : result.rectangles())
         ret << QPolygonF(rect);
+    return ret;
+}
+
+/*!
+    \qmlproperty point PdfSearchModel::currentResultBoundingRect
+
+    The bounding box containing all \l currentResultBoundingPolygons.
+
+    When this property changes, a scrollable view should automatically scroll
+    itself in such a way as to ensure that this region is visible; for example,
+    it could try to position the upper-left corner near the upper-left of its
+    own viewport, subject to the constraints of the scrollable area.
+*/
+QRectF QQuickPdfSearchModel::currentResultBoundingRect() const
+{
+    QRectF ret;
+    const auto &results = const_cast<QQuickPdfSearchModel *>(this)->resultsOnPage(m_currentPage);
+    if (m_currentResult < 0 || m_currentResult >= results.count())
+        return ret;
+    auto rects = results[m_currentResult].rectangles();
+    ret = rects.takeFirst();
+    for (auto rect : rects)
+        ret = ret.united(rect);
     return ret;
 }
 
@@ -149,7 +172,7 @@ void QQuickPdfSearchModel::onResultsChanged()
 
     \sa PathMultiline
 */
-QVector<QPolygonF> QQuickPdfSearchModel::currentPageBoundingPolygons() const
+QList<QPolygonF> QQuickPdfSearchModel::currentPageBoundingPolygons() const
 {
     return const_cast<QQuickPdfSearchModel *>(this)->boundingPolygonsOnPage(m_currentPage);
 }
@@ -180,14 +203,14 @@ QVector<QPolygonF> QQuickPdfSearchModel::currentPageBoundingPolygons() const
 
     \sa PathMultiline
 */
-QVector<QPolygonF> QQuickPdfSearchModel::boundingPolygonsOnPage(int page)
+QList<QPolygonF> QQuickPdfSearchModel::boundingPolygonsOnPage(int page)
 {
     if (!document() || searchString().isEmpty() || page < 0 || page > document()->pageCount())
         return {};
 
     updatePage(page);
 
-    QVector<QPolygonF> ret;
+    QList<QPolygonF> ret;
     auto m = QPdfSearchModel::resultsOnPage(page);
     for (auto result : m) {
         for (auto rect : result.rectangles())
@@ -266,6 +289,7 @@ void QQuickPdfSearchModel::setCurrentResult(int currentResult)
     m_currentResult = currentResult;
     emit currentResultChanged();
     emit currentResultBoundingPolygonsChanged();
+    emit currentResultBoundingRectChanged();
 }
 
 /*!

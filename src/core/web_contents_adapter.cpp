@@ -66,6 +66,8 @@
 #include "base/task/sequence_manager/sequence_manager_impl.h"
 #include "base/task/sequence_manager/thread_controller_with_message_pump_impl.h"
 #include "base/values.h"
+#include "chrome/browser/tab_contents/form_interaction_tab_helper.h"
+#include "components/performance_manager/embedder/performance_manager_registry.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -88,7 +90,7 @@
 #include "extensions/buildflags/buildflags.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/common/peerconnection/webrtc_ip_handling_policy.h"
-#include "third_party/blink/public/web/web_media_player_action.h"
+#include "third_party/blink/public/mojom/frame/media_player_action.mojom.h"
 #include "printing/buildflags/buildflags.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/clipboard_constants.h"
@@ -115,6 +117,7 @@
 #include <QtCore/qmimedata.h>
 #include <QtCore/qtemporarydir.h>
 #include <QtGui/qdrag.h>
+#include <QtGui/QDragEnterEvent>
 #include <QtGui/qpixmap.h>
 
 // Can't include headers as qaccessible.h conflicts with Chromium headers.
@@ -239,8 +242,7 @@ static void callbackOnPdfSavingFinished(WebContentsAdapterClient *adapterClient,
 
 static std::unique_ptr<content::WebContents> createBlankWebContents(WebContentsAdapterClient *adapterClient, content::BrowserContext *browserContext)
 {
-    content::WebContents::CreateParams create_params(browserContext, NULL);
-    create_params.routing_id = MSG_ROUTING_NONE;
+    content::WebContents::CreateParams create_params(browserContext, nullptr);
     create_params.initially_hidden = true;
 
     std::unique_ptr<content::WebContents> webContents = content::WebContents::Create(create_params);
@@ -486,7 +488,7 @@ void WebContentsAdapter::setClient(WebContentsAdapterClient *adapterClient)
     Q_ASSERT(m_profileAdapter);
 
     // This might replace any adapter that has been initialized with this WebEngineSettings.
-    adapterClient->webEngineSettings()->setWebContentsAdapter(this);
+    WebEngineSettings::get(adapterClient->webEngineSettings())->setWebContentsAdapter(this);
 }
 
 bool WebContentsAdapter::isInitialized() const
@@ -525,6 +527,9 @@ void WebContentsAdapter::initialize(content::SiteInstance *site)
 #if BUILDFLAG(ENABLE_EXTENSIONS)
     extensions::ExtensionWebContentsObserverQt::CreateForWebContents(webContents());
 #endif
+    FormInteractionTabHelper::CreateForWebContents(webContents());
+    if (auto *performance_manager_registry = performance_manager::PerformanceManagerRegistry::GetInstance())
+        performance_manager_registry->CreatePageNodeForWebContents(webContents());
 
     // Create an instance of WebEngineVisitedLinksManager to catch the first
     // content::NOTIFICATION_RENDERER_PROCESS_CREATED event. This event will
@@ -552,7 +557,7 @@ void WebContentsAdapter::initializeRenderPrefs()
     const int qtCursorFlashTime = QGuiApplication::styleHints()->cursorFlashTime();
     rendererPrefs->caret_blink_interval =
             base::TimeDelta::FromMillisecondsD(0.5 * static_cast<double>(qtCursorFlashTime));
-    rendererPrefs->user_agent_override = m_profileAdapter->httpUserAgent().toStdString();
+    rendererPrefs->user_agent_override = blink::UserAgentOverride::UserAgentOnly(m_profileAdapter->httpUserAgent().toStdString());
     rendererPrefs->accept_languages = m_profileAdapter->httpAcceptLanguageWithoutQualities().toStdString();
 #if QT_CONFIG(webengine_webrtc)
     base::CommandLine* commandLine = base::CommandLine::ForCurrentProcess();
@@ -561,7 +566,8 @@ void WebContentsAdapter::initializeRenderPrefs()
                 commandLine->GetSwitchValueASCII(switches::kForceWebRtcIPHandlingPolicy);
     else
         rendererPrefs->webrtc_ip_handling_policy =
-                m_adapterClient->webEngineSettings()->testAttribute(WebEngineSettings::WebRTCPublicInterfacesOnly)
+                m_adapterClient->webEngineSettings()->testAttribute(
+                        QWebEngineSettings::WebRTCPublicInterfacesOnly)
                 ? blink::kWebRTCIPHandlingDefaultPublicInterfaceOnly
                 : blink::kWebRTCIPHandlingDefault;
 #endif
@@ -614,6 +620,8 @@ void WebContentsAdapter::reload()
     bool wasDiscarded = (m_lifecycleState == LifecycleState::Discarded);
     setLifecycleState(LifecycleState::Active);
     CHECK_VALID_RENDER_WIDGET_HOST_VIEW(m_webContents->GetRenderViewHost());
+    WebEngineSettings *settings = WebEngineSettings::get(m_adapterClient->webEngineSettings());
+    settings->doApply();
     if (!wasDiscarded) // undiscard() already triggers a reload
         m_webContents->GetController().Reload(content::ReloadType::NORMAL, /*checkRepost = */false);
     focusIfNecessary();
@@ -625,6 +633,8 @@ void WebContentsAdapter::reloadAndBypassCache()
     bool wasDiscarded = (m_lifecycleState == LifecycleState::Discarded);
     setLifecycleState(LifecycleState::Active);
     CHECK_VALID_RENDER_WIDGET_HOST_VIEW(m_webContents->GetRenderViewHost());
+    WebEngineSettings *settings = WebEngineSettings::get(m_adapterClient->webEngineSettings());
+    settings->doApply();
     if (!wasDiscarded) // undiscard() already triggers a reload
         m_webContents->GetController().Reload(content::ReloadType::BYPASSING_CACHE, /*checkRepost = */false);
     focusIfNecessary();
@@ -654,6 +664,8 @@ void WebContentsAdapter::load(const QWebEngineHttpRequest &request)
     }
 
     CHECK_VALID_RENDER_WIDGET_HOST_VIEW(m_webContents->GetRenderViewHost());
+
+    WebEngineSettings::get(m_adapterClient->webEngineSettings())->doApply();
 
     // The situation can occur when relying on the editingFinished signal in QML to set the url
     // of the WebView.
@@ -707,8 +719,8 @@ void WebContentsAdapter::load(const QWebEngineHttpRequest &request)
     }
 
     // convert the custom headers into the format that chromium expects
-    QVector<QByteArray> headers = request.headers();
-    for (QVector<QByteArray>::const_iterator it = headers.cbegin(); it != headers.cend(); ++it) {
+    QList<QByteArray> headers = request.headers();
+    for (QList<QByteArray>::const_iterator it = headers.cbegin(); it != headers.cend(); ++it) {
         if (params.extra_headers.length() > 0)
             params.extra_headers += '\n';
         params.extra_headers += (*it).toStdString() + ": " + request.header(*it).toStdString();
@@ -739,6 +751,8 @@ void WebContentsAdapter::setContent(const QByteArray &data, const QString &mimeT
         setLifecycleState(LifecycleState::Active);
 
     CHECK_VALID_RENDER_WIDGET_HOST_VIEW(m_webContents->GetRenderViewHost());
+
+    WebEngineSettings::get(m_adapterClient->webEngineSettings())->doApply();
 
     QByteArray encodedData = data.toPercentEncoding();
     std::string urlString;
@@ -1004,7 +1018,17 @@ ProfileAdapter* WebContentsAdapter::profileAdapter()
                     static_cast<ProfileQt*>(m_webContents->GetBrowserContext())->profileAdapter() : nullptr;
 }
 
-#ifndef QT_NO_ACCESSIBILITY
+void WebContentsAdapter::setRequestInterceptor(QWebEngineUrlRequestInterceptor *interceptor)
+{
+    m_requestInterceptor = interceptor;
+}
+
+QWebEngineUrlRequestInterceptor* WebContentsAdapter::requestInterceptor() const
+{
+    return m_requestInterceptor;
+}
+
+#if QT_CONFIG(accessibility)
 QAccessibleInterface *WebContentsAdapter::browserAccessible()
 {
     CHECK_INITIALIZED(nullptr);
@@ -1020,7 +1044,7 @@ QAccessibleInterface *WebContentsAdapter::browserAccessible()
 
     return content::toQAccessibleInterface(acc);
 }
-#endif // QT_NO_ACCESSIBILITY
+#endif // QT_CONFIG(accessibility)
 
 void WebContentsAdapter::runJavaScript(const QString &javaScript, quint32 worldId)
 {
@@ -1092,7 +1116,6 @@ void WebContentsAdapter::download(const QUrl &url, const QString &suggestedFileN
     if (!dlm)
         return;
 
-    dlmd->markNextDownloadAsUserRequested();
     dlm->SetDelegate(dlmd);
 
     net::NetworkTrafficAnnotationTag traffic_annotation =
@@ -1165,22 +1188,22 @@ void WebContentsAdapter::copyImageAt(const QPoint &location)
     m_webContents->GetRenderViewHost()->GetMainFrame()->CopyImageAt(location.x(), location.y());
 }
 
-static blink::WebMediaPlayerAction::Type toBlinkMediaPlayerActionType(WebContentsAdapter::MediaPlayerAction action)
+static blink::mojom::MediaPlayerActionType toBlinkMediaPlayerActionType(WebContentsAdapter::MediaPlayerAction action)
 {
     switch (action) {
     case WebContentsAdapter::MediaPlayerPlay:
-        return blink::WebMediaPlayerAction::Type::kPlay;
+        return blink::mojom::MediaPlayerActionType::kPlay;
     case WebContentsAdapter::MediaPlayerMute:
-        return blink::WebMediaPlayerAction::Type::kMute;
+        return blink::mojom::MediaPlayerActionType::kMute;
     case WebContentsAdapter::MediaPlayerLoop:
-        return blink::WebMediaPlayerAction::Type::kLoop;
+        return blink::mojom::MediaPlayerActionType::kLoop;
     case WebContentsAdapter::MediaPlayerControls:
-        return blink::WebMediaPlayerAction::Type::kControls;
+        return blink::mojom::MediaPlayerActionType::kControls;
     case WebContentsAdapter::MediaPlayerNoAction:
         break;
     }
     NOTREACHED();
-    return (blink::WebMediaPlayerAction::Type)-1;
+    return (blink::mojom::MediaPlayerActionType)-1;
 }
 
 void WebContentsAdapter::executeMediaPlayerActionAt(const QPoint &location, MediaPlayerAction action, bool enable)
@@ -1188,7 +1211,7 @@ void WebContentsAdapter::executeMediaPlayerActionAt(const QPoint &location, Medi
     CHECK_INITIALIZED();
     if (action == MediaPlayerNoAction)
         return;
-    blink::WebMediaPlayerAction blinkAction(toBlinkMediaPlayerActionType(action), enable);
+    blink::mojom::MediaPlayerAction blinkAction(toBlinkMediaPlayerActionType(action), enable);
     m_webContents->GetRenderViewHost()->GetMainFrame()->ExecuteMediaPlayerActionAtLocation(toGfx(location), blinkAction);
 }
 
@@ -1340,36 +1363,52 @@ void WebContentsAdapter::grantMediaAccessPermission(const QUrl &securityOrigin, 
     CHECK_INITIALIZED();
     // Let the permission manager remember the reply.
     if (flags & WebContentsAdapterClient::MediaAudioCapture)
-        m_profileAdapter->permissionRequestReply(securityOrigin, ProfileAdapter::AudioCapturePermission, true);
+        m_profileAdapter->permissionRequestReply(securityOrigin, ProfileAdapter::AudioCapturePermission, ProfileAdapter::AllowedPermission);
     if (flags & WebContentsAdapterClient::MediaVideoCapture)
-        m_profileAdapter->permissionRequestReply(securityOrigin, ProfileAdapter::VideoCapturePermission, true);
+        m_profileAdapter->permissionRequestReply(securityOrigin, ProfileAdapter::VideoCapturePermission, ProfileAdapter::AllowedPermission);
     MediaCaptureDevicesDispatcher::GetInstance()->handleMediaAccessPermissionResponse(m_webContents.get(), securityOrigin, flags);
 }
 
-void WebContentsAdapter::runGeolocationRequestCallback(const QUrl &securityOrigin, bool allowed)
+void WebContentsAdapter::grantFeaturePermission(const QUrl &securityOrigin, ProfileAdapter::PermissionType feature, ProfileAdapter::PermissionState allowed)
 {
-    CHECK_INITIALIZED();
-    m_profileAdapter->permissionRequestReply(securityOrigin, ProfileAdapter::GeolocationPermission, allowed);
+    Q_ASSERT(m_profileAdapter);
+    m_profileAdapter->permissionRequestReply(securityOrigin, feature, allowed);
 }
 
-void WebContentsAdapter::runUserNotificationRequestCallback(const QUrl &securityOrigin, bool allowed)
+void WebContentsAdapter::grantMouseLockPermission(const QUrl &securityOrigin, bool granted)
 {
     CHECK_INITIALIZED();
-    m_profileAdapter->permissionRequestReply(securityOrigin, ProfileAdapter::NotificationPermission, allowed);
-}
-
-void WebContentsAdapter::grantMouseLockPermission(bool granted)
-{
-    CHECK_INITIALIZED();
+    if (securityOrigin != toQt(m_webContents->GetLastCommittedURL().GetOrigin()))
+        return;
 
     if (granted) {
-        if (RenderWidgetHostViewQt *rwhv = static_cast<RenderWidgetHostViewQt *>(m_webContents->GetRenderWidgetHostView()))
+        if (RenderWidgetHostViewQt *rwhv = static_cast<RenderWidgetHostViewQt *>(m_webContents->GetRenderWidgetHostView())) {
             rwhv->Focus();
-        else
+            if (!rwhv->HasFocus()) {
+                // We tried to activate our RWHVQtDelegate, but we failed. This probably means that
+                // the permission was granted from a modal dialog and the windowing system is not ready
+                // to set focus on the originating view. Since pointer lock strongly requires it, we just
+                // wait until the next FocusIn event.
+                m_pendingMouseLockPermissions.insert(securityOrigin, granted);
+                return;
+            }
+        } else
             granted = false;
     }
 
-    m_webContents->GotResponseToLockMouseRequest(granted);
+    m_webContents->GotResponseToLockMouseRequest(granted ? blink::mojom::PointerLockResult::kSuccess
+                                                         : blink::mojom::PointerLockResult::kPermissionDenied);
+}
+
+void WebContentsAdapter::handlePendingMouseLockPermission()
+{
+    CHECK_INITIALIZED();
+    auto it = m_pendingMouseLockPermissions.find(toQt(m_webContents->GetLastCommittedURL().GetOrigin()));
+    if (it != m_pendingMouseLockPermissions.end()) {
+        m_webContents->GotResponseToLockMouseRequest(it.value() ? blink::mojom::PointerLockResult::kSuccess
+                                                                : blink::mojom::PointerLockResult::kPermissionDenied);
+        m_pendingMouseLockPermissions.erase(it);
+    }
 }
 
 void WebContentsAdapter::setBackgroundColor(const QColor &color)
@@ -1601,19 +1640,19 @@ void WebContentsAdapter::enterDrag(QDragEnterEvent *e, const QPointF &screenPos)
 
     content::RenderViewHost *rvh = m_webContents->GetRenderViewHost();
     rvh->GetWidget()->FilterDropData(m_currentDropData.get());
-    rvh->GetWidget()->DragTargetDragEnter(*m_currentDropData, toGfx(e->posF()), toGfx(screenPos),
+    rvh->GetWidget()->DragTargetDragEnter(*m_currentDropData, toGfx(e->position()), toGfx(screenPos),
                                           toWeb(e->possibleActions()),
-                                          toWeb(e->mouseButtons()) | toWeb(e->keyboardModifiers()));
+                                          toWeb(e->buttons()) | toWeb(e->modifiers()));
 }
 
 Qt::DropAction WebContentsAdapter::updateDragPosition(QDragMoveEvent *e, const QPointF &screenPos)
 {
     CHECK_INITIALIZED(Qt::DropAction());
     content::RenderViewHost *rvh = m_webContents->GetRenderViewHost();
-    m_lastDragClientPos = e->posF();
+    m_lastDragClientPos = e->position();
     m_lastDragScreenPos = screenPos;
     rvh->GetWidget()->DragTargetDragOver(toGfx(m_lastDragClientPos), toGfx(m_lastDragScreenPos), toWeb(e->possibleActions()),
-                                         toWeb(e->mouseButtons()) | toWeb(e->keyboardModifiers()));
+                                         toWeb(e->buttons()) | toWeb(e->modifiers()));
     waitForUpdateDragActionCalled();
     return toQt(blink::WebDragOperation(m_currentDropAction));
 }
@@ -1632,7 +1671,7 @@ void WebContentsAdapter::waitForUpdateDragActionCalled()
     DCHECK(delegate);
     m_updateDragActionCalled = false;
     for (;;) {
-        while (delegate->DoWork() && !m_updateDragActionCalled) {}
+        while (delegate->DoWork().is_immediate() && !m_updateDragActionCalled) {}
         if (m_updateDragActionCalled)
             break;
         if (t.hasExpired(timeout)) {
@@ -1656,10 +1695,10 @@ void WebContentsAdapter::endDragging(QDropEvent *e, const QPointF &screenPos)
     CHECK_INITIALIZED();
     content::RenderViewHost *rvh = m_webContents->GetRenderViewHost();
     rvh->GetWidget()->FilterDropData(m_currentDropData.get());
-    m_lastDragClientPos = e->posF();
+    m_lastDragClientPos = e->position();
     m_lastDragScreenPos = screenPos;
     rvh->GetWidget()->DragTargetDrop(*m_currentDropData, toGfx(m_lastDragClientPos), toGfx(m_lastDragScreenPos),
-                                     toWeb(e->mouseButtons()) | toWeb(e->keyboardModifiers()));
+                                     toWeb(e->buttons()) | toWeb(e->modifiers()));
 
     m_currentDropData.reset();
 }
@@ -1684,8 +1723,8 @@ void WebContentsAdapter::replaceMisspelling(const QString &word)
 void WebContentsAdapter::focusIfNecessary()
 {
     CHECK_INITIALIZED();
-    const WebEngineSettings *settings = m_adapterClient->webEngineSettings();
-    bool focusOnNavigation = settings->testAttribute(WebEngineSettings::FocusOnNavigationEnabled);
+    const QWebEngineSettings *settings = m_adapterClient->webEngineSettings();
+    bool focusOnNavigation = settings->testAttribute(QWebEngineSettings::FocusOnNavigationEnabled);
     if (focusOnNavigation)
         m_webContents->Focus();
 }
@@ -1859,7 +1898,7 @@ WebContentsAdapter::LifecycleState WebContentsAdapter::determineRecommendedState
         return LifecycleState::Frozen;
 
     // Form input is not saved.
-    if (m_webContents->GetPageImportanceSignals().had_form_interaction)
+    if (FormInteractionTabHelper::FromWebContents(m_webContents.get())->had_form_interaction())
         return LifecycleState::Frozen;
 
     // Do not discard PDFs as they might contain entry that is not saved and they
@@ -1967,6 +2006,9 @@ void WebContentsAdapter::discard()
 #if BUILDFLAG(ENABLE_EXTENSIONS)
     extensions::ExtensionWebContentsObserverQt::CreateForWebContents(webContents());
 #endif
+    FormInteractionTabHelper::CreateForWebContents(webContents());
+    if (auto *performance_manager_registry = performance_manager::PerformanceManagerRegistry::GetInstance())
+        performance_manager_registry->CreatePageNodeForWebContents(webContents());
 }
 
 void WebContentsAdapter::undiscard()
@@ -2003,7 +2045,7 @@ ASSERT_ENUMS_MATCH(ReferrerPolicy::NoReferrerWhenDowngrade, network::mojom::Refe
 ASSERT_ENUMS_MATCH(ReferrerPolicy::Never, network::mojom::ReferrerPolicy::kNever)
 ASSERT_ENUMS_MATCH(ReferrerPolicy::Origin, network::mojom::ReferrerPolicy::kOrigin)
 ASSERT_ENUMS_MATCH(ReferrerPolicy::OriginWhenCrossOrigin, network::mojom::ReferrerPolicy::kOriginWhenCrossOrigin)
-ASSERT_ENUMS_MATCH(ReferrerPolicy::NoReferrerWhenDowngradeOriginWhenCrossOrigin, network::mojom::ReferrerPolicy::kNoReferrerWhenDowngradeOriginWhenCrossOrigin)
+//ASSERT_ENUMS_MATCH(ReferrerPolicy::NoReferrerWhenDowngradeOriginWhenCrossOrigin, network::mojom::ReferrerPolicy::kNoReferrerWhenDowngradeOriginWhenCrossOrigin)
 ASSERT_ENUMS_MATCH(ReferrerPolicy::SameOrigin, network::mojom::ReferrerPolicy::kSameOrigin)
 ASSERT_ENUMS_MATCH(ReferrerPolicy::StrictOrigin, network::mojom::ReferrerPolicy::kStrictOrigin)
 ASSERT_ENUMS_MATCH(ReferrerPolicy::Last, network::mojom::ReferrerPolicy::kLast)

@@ -43,6 +43,7 @@ public:
 private Q_SLOTS:
     void handleError_data();
     void handleError();
+    void fatalError();
 };
 
 struct PageWithCertificateErrorHandler : QWebEnginePage
@@ -57,11 +58,18 @@ struct PageWithCertificateErrorHandler : QWebEnginePage
     QSignalSpy loadSpy;
     QScopedPointer<QWebEngineCertificateError> error;
 
-    bool certificateError(const QWebEngineCertificateError &e) override {
+    void certificateError(QWebEngineCertificateError e) override
+    {
         error.reset(new QWebEngineCertificateError(e));
-        if (deferError)
+        if (deferError) {
             error->defer();
-        return acceptCertificate;
+            return;
+        }
+
+        if (acceptCertificate)
+            error->acceptCertificate();
+        else
+            error->rejectCertificate();
     }
 };
 
@@ -102,22 +110,35 @@ void tst_CertificateError::handleError()
     QCOMPARE(chain[1].serialNumber(), "6d:52:fb:b4:57:3b:b2:03:c8:62:7b:7e:44:45:5c:d3:08:87:74:17");
 
     if (deferError) {
-        QVERIFY(page.error->deferred());
-        QVERIFY(!page.error->answered());
         QCOMPARE(page.loadSpy.count(), 0);
         QCOMPARE(toPlainTextSync(&page), QString());
 
         if (acceptCertificate)
-            page.error->ignoreCertificateError();
+            page.error->acceptCertificate();
         else
             page.error->rejectCertificate();
 
-        QVERIFY(page.error->answered());
         page.error.reset();
     }
     QTRY_COMPARE_WITH_TIMEOUT(page.loadSpy.count(), 1, 30000);
     QCOMPARE(page.loadSpy.takeFirst().value(0).toBool(), acceptCertificate);
     QCOMPARE(toPlainTextSync(&page), expectedContent);
+}
+
+void tst_CertificateError::fatalError()
+{
+    PageWithCertificateErrorHandler page(false, false);
+    page.settings()->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
+    QSignalSpy loadFinishedSpy(&page, &QWebEnginePage::loadFinished);
+
+    page.setUrl(QUrl("https://revoked.badssl.com"));
+    if (!loadFinishedSpy.wait(10000))
+        QSKIP("Couldn't load page from network, skipping test.");
+    QTRY_VERIFY(page.error);
+    QVERIFY(!page.error->isOverridable());
+
+    // Fatal certificate errors are implicitly rejected. This should not cause crash.
+    page.error->rejectCertificate();
 }
 
 QTEST_MAIN(tst_CertificateError)

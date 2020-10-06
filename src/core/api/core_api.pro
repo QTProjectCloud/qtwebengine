@@ -14,7 +14,8 @@ CONFIG -= create_prl
 # Copy this logic from qt_module.prf so that the intermediate library can be
 # created to the same rules as the final module linking in core_module.pro.
 !host_build:if(win32|mac):!macx-xcode {
-    qtConfig(debug_and_release): CONFIG += debug_and_release build_all
+    qtConfig(debug_and_release): CONFIG += debug_and_release
+    qtConfig(build_all): CONFIG += build_all
 }
 
 DEFINES += \
@@ -35,9 +36,11 @@ HEADERS = \
     qwebengineclientcertificatestore.h \
     qtwebenginecoreglobal.h \
     qtwebenginecoreglobal_p.h \
+    qwebenginecertificateerror.h \
     qwebenginecookiestore.h \
     qwebenginecookiestore_p.h \
     qwebenginefindtextresult.h \
+    qwebenginefullscreenrequest.h \
     qwebenginehttprequest.h \
     qwebenginemessagepumpscheduler_p.h \
     qwebenginenotification.h \
@@ -48,13 +51,23 @@ HEADERS = \
     qwebengineurlrequestinfo_p.h \
     qwebengineurlrequestjob.h \
     qwebengineurlscheme.h \
-    qwebengineurlschemehandler.h
+    qwebengineurlschemehandler.h \
+    qwebenginecontextmenurequest.h \
+    qwebenginecontextmenurequest_p.h \
+    qwebenginedownloadrequest.h \
+    qwebenginedownloadrequest_p.h \
+    qwebenginesettings.h \
+    qwebenginescript.h \
+    qwebenginescriptcollection.h \
+    qwebenginescriptcollection_p.h
 
 SOURCES = \
     qtwebenginecoreglobal.cpp \
+    qwebenginecertificateerror.cpp \
     qwebengineclientcertificatestore.cpp \
     qwebenginecookiestore.cpp \
     qwebenginefindtextresult.cpp \
+    qwebenginefullscreenrequest.cpp \
     qwebenginehttprequest.cpp \
     qwebenginemessagepumpscheduler.cpp \
     qwebenginenotification.cpp \
@@ -63,7 +76,12 @@ SOURCES = \
     qwebengineurlrequestinfo.cpp \
     qwebengineurlrequestjob.cpp \
     qwebengineurlscheme.cpp \
-    qwebengineurlschemehandler.cpp
+    qwebengineurlschemehandler.cpp \
+    qwebenginecontextmenurequest.cpp \
+    qwebenginedownloadrequest.cpp \
+    qwebenginesettings.cpp \
+    qwebenginescript.cpp \
+    qwebenginescriptcollection.cpp
 
 # Chromium headers included are not remotely clean
 CONFIG -= warning_clean

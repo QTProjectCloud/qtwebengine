@@ -1,5 +1,5 @@
 include($$QTWEBENGINE_OUT_ROOT/src/webengine/qtwebengine-config.pri)
-QT_FOR_CONFIG += webengine-private
+QT_FOR_CONFIG += webengine-private webenginecore-private
 
 TARGET = QtWebEngine
 MODULE = webengine
@@ -16,23 +16,20 @@ INCLUDEPATH += $$PWD api ../core ../core/api
 
 SOURCES = \
         api/qquickwebengineaction.cpp \
-        api/qquickwebenginecertificateerror.cpp \
         api/qquickwebengineclientcertificateselection.cpp \
-        api/qquickwebenginecontextmenurequest.cpp \
         api/qquickwebenginedialogrequests.cpp \
-        api/qquickwebenginedownloaditem.cpp \
         api/qquickwebenginehistory.cpp \
         api/qquickwebenginefaviconprovider.cpp \
         api/qquickwebengineloadrequest.cpp \
         api/qquickwebenginenavigationrequest.cpp \
         api/qquickwebenginenewviewrequest.cpp \
         api/qquickwebengineprofile.cpp \
-        api/qquickwebenginescript.cpp \
         api/qquickwebenginesettings.cpp \
         api/qquickwebenginesingleton.cpp \
         api/qquickwebenginetouchhandleprovider.cpp \
         api/qquickwebengineview.cpp \
         api/qtwebengineglobal.cpp \
+        api/qquickwebenginescriptcollection.cpp \
         render_widget_host_view_qt_delegate_quick.cpp \
         render_widget_host_view_qt_delegate_quickwindow.cpp \
         ui_delegates_manager.cpp
@@ -42,12 +39,8 @@ HEADERS = \
         api/qtwebengineglobal_p.h \
         api/qquickwebengineaction_p.h \
         api/qquickwebengineaction_p_p.h \
-        api/qquickwebenginecertificateerror_p.h \
         api/qquickwebengineclientcertificateselection_p.h \
-        api/qquickwebenginecontextmenurequest_p.h \
         api/qquickwebenginedialogrequests_p.h \
-        api/qquickwebenginedownloaditem_p.h \
-        api/qquickwebenginedownloaditem_p_p.h \
         api/qquickwebenginehistory_p.h \
         api/qquickwebenginefaviconprovider_p_p.h \
         api/qquickwebengineloadrequest_p.h \
@@ -55,13 +48,12 @@ HEADERS = \
         api/qquickwebenginenewviewrequest_p.h \
         api/qquickwebengineprofile.h \
         api/qquickwebengineprofile_p.h \
-        api/qquickwebenginescript.h \
-        api/qquickwebenginescript_p.h \
         api/qquickwebenginesettings_p.h \
         api/qquickwebenginesingleton_p.h \
         api/qquickwebenginetouchhandleprovider_p_p.h \
         api/qquickwebengineview_p.h \
         api/qquickwebengineview_p_p.h \
+        api/qquickwebenginescriptcollection.h \
         render_widget_host_view_qt_delegate_quick.h \
         render_widget_host_view_qt_delegate_quickwindow.h \
         ui_delegates_manager.h

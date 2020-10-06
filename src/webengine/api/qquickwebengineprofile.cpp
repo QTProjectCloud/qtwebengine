@@ -39,33 +39,28 @@
 
 #include "qquickwebengineprofile.h"
 
-#include "qquickwebenginedownloaditem_p.h"
-#include "qquickwebenginedownloaditem_p_p.h"
 #include "qquickwebengineprofile_p.h"
-#include "qquickwebenginescript_p.h"
 #include "qquickwebenginesettings_p.h"
+#include "qwebenginescriptcollection.h"
+#include "qwebenginescriptcollection_p.h"
+#include "qquickwebenginescriptcollection.h"
 #include "qquickwebengineview_p_p.h"
 #include "qwebenginecookiestore.h"
 #include "qwebenginenotification.h"
-
 #include <QFileInfo>
 #include <QDir>
 #include <QQmlEngine>
+#include <QtQml/QQmlInfo>
 
 #include "profile_adapter.h"
-#include "renderer_host/user_resource_controller_host.h"
 #include "web_engine_settings.h"
 
+#include <QtWebEngineCore/private/qwebenginedownloadrequest_p.h>
 #include <QtWebEngineCore/qwebengineurlscheme.h>
 
 using QtWebEngineCore::ProfileAdapter;
 
 QT_BEGIN_NAMESPACE
-
-ASSERT_ENUMS_MATCH(QQuickWebEngineDownloadItem::UnknownSaveFormat, QtWebEngineCore::ProfileAdapterClient::UnknownSavePageFormat)
-ASSERT_ENUMS_MATCH(QQuickWebEngineDownloadItem::SingleHtmlSaveFormat, QtWebEngineCore::ProfileAdapterClient::SingleHtmlSaveFormat)
-ASSERT_ENUMS_MATCH(QQuickWebEngineDownloadItem::CompleteHtmlSaveFormat, QtWebEngineCore::ProfileAdapterClient::CompleteHtmlSaveFormat)
-ASSERT_ENUMS_MATCH(QQuickWebEngineDownloadItem::MimeHtmlSaveFormat, QtWebEngineCore::ProfileAdapterClient::MimeHtmlSaveFormat)
 
 /*!
     \class QQuickWebEngineProfile
@@ -133,12 +128,12 @@ ASSERT_ENUMS_MATCH(QQuickWebEngineDownloadItem::MimeHtmlSaveFormat, QtWebEngineC
 */
 
 /*!
-  \fn QQuickWebEngineProfile::downloadRequested(QQuickWebEngineDownloadItem *download)
+  \fn QQuickWebEngineProfile::downloadRequested(QWebEngineDownloadRequest *download)
 
   This signal is emitted whenever a download has been triggered.
   The \a download argument holds the state of the download.
   The download has to be explicitly accepted with
-  \c{QQuickWebEngineDownloadItem::accept()} or it will be
+  \c{QWebEngineDownloadRequest::accept()} or it will be
   cancelled by default.
   The download item is parented by the profile. If it is not accepted, it
   will be deleted immediately after the signal emission.
@@ -146,7 +141,7 @@ ASSERT_ENUMS_MATCH(QQuickWebEngineDownloadItem::MimeHtmlSaveFormat, QtWebEngineC
 */
 
 /*!
-  \fn QQuickWebEngineProfile::downloadFinished(QQuickWebEngineDownloadItem *download)
+  \fn QQuickWebEngineProfile::downloadFinished(QWebEngineDownloadRequest *download)
 
   This signal is emitted whenever downloading stops, because it finished successfully, was
   cancelled, or was interrupted (for example, because connectivity was lost).
@@ -164,14 +159,15 @@ ASSERT_ENUMS_MATCH(QQuickWebEngineDownloadItem::MimeHtmlSaveFormat, QtWebEngineC
 */
 
 QQuickWebEngineProfilePrivate::QQuickWebEngineProfilePrivate(ProfileAdapter *profileAdapter)
-        : m_settings(new QQuickWebEngineSettings())
-        , m_profileAdapter(profileAdapter)
+    : m_settings(new QQuickWebEngineSettings())
+    , m_profileAdapter(profileAdapter)
+    , m_scriptCollection(new QQuickWebEngineScriptCollection(new QWebEngineScriptCollection(
+              new QWebEngineScriptCollectionPrivate(profileAdapter->userResourceController()))))
 {
     profileAdapter->addClient(this);
-    m_settings->d_ptr->initDefaults();
     // Fullscreen API was implemented before the supported setting, so we must
     // make it default true to avoid change in default API behavior.
-    m_settings->d_ptr->setAttribute(QtWebEngineCore::WebEngineSettings::FullScreenSupportEnabled, true);
+    m_settings->d_ptr->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
 }
 
 QQuickWebEngineProfilePrivate::~QQuickWebEngineProfilePrivate()
@@ -242,38 +238,38 @@ void QQuickWebEngineProfilePrivate::downloadRequested(DownloadItemInfo &info)
     Q_Q(QQuickWebEngineProfile);
 
     Q_ASSERT(!m_ongoingDownloads.contains(info.id));
-    QQuickWebEngineDownloadItemPrivate *itemPrivate = new QQuickWebEngineDownloadItemPrivate(q, info.url);
+    QWebEngineDownloadRequestPrivate *itemPrivate = new QWebEngineDownloadRequestPrivate(m_profileAdapter, info.url);
     itemPrivate->downloadId = info.id;
-    itemPrivate->downloadState = QQuickWebEngineDownloadItem::DownloadRequested;
+    itemPrivate->downloadState = QWebEngineDownloadRequest::DownloadRequested;
     itemPrivate->startTime = info.startTime;
     itemPrivate->totalBytes = info.totalBytes;
     itemPrivate->mimeType = info.mimeType;
     itemPrivate->downloadDirectory = QFileInfo(info.path).path();
     itemPrivate->downloadFileName = QFileInfo(info.path).fileName();
     itemPrivate->suggestedFileName = info.suggestedFileName;
-    itemPrivate->savePageFormat = static_cast<QQuickWebEngineDownloadItem::SavePageFormat>(
+    itemPrivate->savePageFormat = static_cast<QWebEngineDownloadRequest::SavePageFormat>(
                 info.savePageFormat);
-    itemPrivate->type = static_cast<QQuickWebEngineDownloadItem::DownloadType>(info.downloadType);
+    itemPrivate->isSavePageDownload = info.isSavePageDownload;
     if (info.page && info.page->clientType() == QtWebEngineCore::WebContentsAdapterClient::QmlClient)
-        itemPrivate->view = static_cast<QQuickWebEngineViewPrivate *>(info.page)->q_ptr;
+        itemPrivate->page = static_cast<QQuickWebEngineViewPrivate *>(info.page)->q_ptr;
     else
-        itemPrivate->view = nullptr;
+        itemPrivate->page = nullptr;
 
-    QQuickWebEngineDownloadItem *download = new QQuickWebEngineDownloadItem(itemPrivate, q);
+    QWebEngineDownloadRequest *download = new QWebEngineDownloadRequest(itemPrivate, q);
 
     m_ongoingDownloads.insert(info.id, download);
-    QObject::connect(download, &QQuickWebEngineDownloadItem::destroyed, q, [id = info.id, this] () { downloadDestroyed(id); });
+    QObject::connect(download, &QWebEngineDownloadRequest::destroyed, q, [id = info.id, this] () { downloadDestroyed(id); });
 
     QQmlEngine::setObjectOwnership(download, QQmlEngine::JavaScriptOwnership);
     Q_EMIT q->downloadRequested(download);
 
-    QQuickWebEngineDownloadItem::DownloadState state = download->state();
+    QWebEngineDownloadRequest::DownloadState state = download->state();
     info.path = QDir(download->downloadDirectory()).filePath(download->downloadFileName());
     info.savePageFormat = itemPrivate->savePageFormat;
-    info.accepted = state != QQuickWebEngineDownloadItem::DownloadCancelled
-                      && state != QQuickWebEngineDownloadItem::DownloadRequested;
+    info.accepted = state != QWebEngineDownloadRequest::DownloadCancelled
+                      && state != QWebEngineDownloadRequest::DownloadRequested;
 
-    if (state == QQuickWebEngineDownloadItem::DownloadRequested) {
+    if (state == QWebEngineDownloadRequest::DownloadRequested) {
         // Delete unaccepted downloads.
         info.accepted = false;
         delete download;
@@ -287,7 +283,7 @@ void QQuickWebEngineProfilePrivate::downloadUpdated(const DownloadItemInfo &info
 
     Q_Q(QQuickWebEngineProfile);
 
-    QQuickWebEngineDownloadItem* download = m_ongoingDownloads.value(info.id).data();
+    QWebEngineDownloadRequest* download = m_ongoingDownloads.value(info.id).data();
 
     if (!download) {
         downloadDestroyed(info.id);
@@ -313,38 +309,6 @@ void QQuickWebEngineProfilePrivate::showNotification(QSharedPointer<QtWebEngineC
     auto notification = new QWebEngineNotification(controller);
     QQmlEngine::setObjectOwnership(notification, QQmlEngine::JavaScriptOwnership);
     Q_EMIT q->presentNotification(notification);
-}
-
-void QQuickWebEngineProfilePrivate::userScripts_append(QQmlListProperty<QQuickWebEngineScript> *p, QQuickWebEngineScript *script)
-{
-    Q_ASSERT(p && p->data);
-    QQuickWebEngineProfilePrivate *d = static_cast<QQuickWebEngineProfilePrivate *>(p->data);
-    QtWebEngineCore::UserResourceControllerHost *resourceController = d->profileAdapter()->userResourceController();
-    d->m_userScripts.append(script);
-    script->d_func()->bind(resourceController);
-}
-
-int QQuickWebEngineProfilePrivate::userScripts_count(QQmlListProperty<QQuickWebEngineScript> *p)
-{
-    Q_ASSERT(p && p->data);
-    QQuickWebEngineProfilePrivate *d = static_cast<QQuickWebEngineProfilePrivate *>(p->data);
-    return d->m_userScripts.count();
-}
-
-QQuickWebEngineScript *QQuickWebEngineProfilePrivate::userScripts_at(QQmlListProperty<QQuickWebEngineScript> *p, int idx)
-{
-    Q_ASSERT(p && p->data);
-    QQuickWebEngineProfilePrivate *d = static_cast<QQuickWebEngineProfilePrivate *>(p->data);
-    return d->m_userScripts.at(idx);
-}
-
-void QQuickWebEngineProfilePrivate::userScripts_clear(QQmlListProperty<QQuickWebEngineScript> *p)
-{
-    Q_ASSERT(p && p->data);
-    QQuickWebEngineProfilePrivate *d = static_cast<QQuickWebEngineProfilePrivate *>(p->data);
-    QtWebEngineCore::UserResourceControllerHost *resourceController = d->profileAdapter()->userResourceController();
-    resourceController->clearAllScripts(NULL);
-    d->m_userScripts.clear();
 }
 
 /*!
@@ -1069,23 +1033,10 @@ QQuickWebEngineSettings *QQuickWebEngineProfile::settings() const
     \sa WebEngineScript
 */
 
-/*!
-    \property QQuickWebEngineProfile::userScripts
-    \since 5.9
-
-    \brief The collection of scripts that are injected into all pages that share
-    this profile.
-
-    \sa QQuickWebEngineScript, QQmlListReference
-*/
-QQmlListProperty<QQuickWebEngineScript> QQuickWebEngineProfile::userScripts()
+QQuickWebEngineScriptCollection *QQuickWebEngineProfile::userScripts() const
 {
-    Q_D(QQuickWebEngineProfile);
-    return QQmlListProperty<QQuickWebEngineScript>(this, d,
-                                                   d->userScripts_append,
-                                                   d->userScripts_count,
-                                                   d->userScripts_at,
-                                                   d->userScripts_clear);
+    const Q_D(QQuickWebEngineProfile);
+    return d->m_scriptCollection.data();
 }
 
 /*!
@@ -1104,3 +1055,5 @@ QWebEngineClientCertificateStore *QQuickWebEngineProfile::clientCertificateStore
 }
 
 QT_END_NAMESPACE
+
+#include "moc_qquickwebengineprofile.cpp"

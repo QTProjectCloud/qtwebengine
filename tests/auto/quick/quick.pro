@@ -6,16 +6,15 @@ TEMPLATE = subdirs
 SUBDIRS += \
     dialogs \
     inspectorserver \
+    qmltests \
     publicapi \
     qquickwebenginedefaultsurfaceformat \
     qquickwebengineview \
-    qtbug-70248
+    qtbug-70248 \
+    certificateerror
 
 qtConfig(webengine-testsupport) {
-    SUBDIRS += \
-        qmltests \
-        qquickwebengineviewgraphics
+    SUBDIRS += qquickwebengineviewgraphics
 }
 
-# QTBUG-66055
 boot2qt: SUBDIRS -= inspectorserver qquickwebengineview qmltests

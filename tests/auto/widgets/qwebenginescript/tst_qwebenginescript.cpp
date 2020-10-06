@@ -320,8 +320,8 @@ void tst_QWebEngineScript::scriptModifications()
     QVERIFY(spyFinished.wait());
     QCOMPARE(evaluateJavaScriptSync(&page, "document.body.innerText"), QVariant::fromValue(QStringLiteral("SUCCESS")));
     QVERIFY(page.scripts().count() == 1);
-    QWebEngineScript s = page.scripts().findScript(QStringLiteral("String1"));
-    QVERIFY(page.scripts().remove(s));
+    QList<QWebEngineScript> s = page.scripts().find(QStringLiteral("String1"));
+    QVERIFY(page.scripts().remove(s.first()));
     QVERIFY(page.scripts().count() == 0);
 }
 
@@ -593,27 +593,22 @@ void tst_QWebEngineScript::webChannelWithBadString()
 
 void tst_QWebEngineScript::matchQrcUrl()
 {
-    QWebEnginePage page;
-    QWebEngineView view;
-    view.setPage(&page);
+    QWebEngineProfile profile;
+    QWebEnginePage page(&profile);
     QWebEngineScript s;
     s.setInjectionPoint(QWebEngineScript::DocumentReady);
     s.setWorldId(QWebEngineScript::MainWorld);
-
-
     s.setSourceCode(QStringLiteral(R"(
 // ==UserScript==
-// @match qrc:/*main.html
+// @match qrc:/*title_b.html
 // ==/UserScript==
 
 document.title = 'New title';
     )"));
-
     page.scripts().insert(s);
-    page.load(QUrl("qrc:/resources/test_iframe_main.html"));
-    view.show();
-    QSignalSpy spyFinished(&page, &QWebEnginePage::loadFinished);
-    QVERIFY(spyFinished.wait());
+    loadSync(&page, QUrl("qrc:/resources/title_a.html"));
+    QCOMPARE(page.title(), "A");
+    loadSync(&page, QUrl("qrc:/resources/title_b.html"));
     QCOMPARE(page.title(), "New title");
 }
 

@@ -58,7 +58,6 @@
 #include <QPointer>
 #include <QScopedPointer>
 #include <QString>
-#include <QVector>
 
 #include "api/qwebengineclientcertificatestore.h"
 #include "api/qwebenginecookiestore.h"
@@ -123,7 +122,6 @@ public:
     void setCachePath(const QString &path);
 
     QString httpCachePath() const;
-    QString cookiesPath() const;
 
     QString httpUserAgent() const;
     void setHttpUserAgent(const QString &userAgent);
@@ -165,6 +163,12 @@ public:
         ClipboardWrite = 6,
     };
 
+    enum PermissionState {
+        AskPermission = 0,
+        AllowedPermission = 1,
+        DeniedPermission = 2
+    };
+
     HttpCacheType httpCacheType() const;
     void setHttpCacheType(ProfileAdapter::HttpCacheType);
 
@@ -188,7 +192,7 @@ public:
     const QList<QByteArray> customUrlSchemes() const;
     UserResourceControllerHost *userResourceController();
 
-    void permissionRequestReply(const QUrl &origin, PermissionType type, bool reply);
+    void permissionRequestReply(const QUrl &origin, PermissionType type, PermissionState reply);
     bool checkPermission(const QUrl &origin, PermissionType type);
 
     QString httpAcceptLanguageWithoutQualities() const;
@@ -199,10 +203,6 @@ public:
 
     void setUseForGlobalCertificateVerification(bool enable = true);
     bool isUsedForGlobalCertificateVerification() const;
-
-    void addPageRequestInterceptor();
-    void removePageRequestInterceptor();
-    bool hasPageRequestInterceptor() const { return m_pageRequestInterceptors > 0; }
 
 #if QT_CONFIG(ssl)
     QWebEngineClientCertificateStore *clientCertificateStore();
@@ -246,9 +246,8 @@ private:
     QHash<QByteArray, QSharedPointer<UserNotificationController>> m_persistentNotifications;
 
     QList<ProfileAdapterClient*> m_clients;
-    QVector<WebContentsAdapterClient *> m_webContentsAdapterClients;
+    QList<WebContentsAdapterClient *> m_webContentsAdapterClients;
     int m_httpCacheMaxSize;
-    int m_pageRequestInterceptors;
     QrcUrlSchemeHandler m_qrcHandler;
 
     Q_DISABLE_COPY(ProfileAdapter)

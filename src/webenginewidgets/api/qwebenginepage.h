@@ -42,7 +42,7 @@
 
 #include <QtWebEngineWidgets/qtwebenginewidgetsglobal.h>
 #include <QtWebEngineWidgets/qwebengineclientcertificateselection.h>
-#include <QtWebEngineWidgets/qwebenginedownloaditem.h>
+#include <QtWebEngineCore/qwebenginedownloadrequest.h>
 #include <QtWebEngineCore/qwebenginecallback.h>
 #include <QtWebEngineCore/qwebenginehttprequest.h>
 
@@ -61,7 +61,6 @@ class QContextMenuBuilder;
 class QWebChannel;
 class QWebEngineCertificateError;
 class QWebEngineClientCertificateSelection;
-class QWebEngineContextMenuData;
 class QWebEngineFindTextResult;
 class QWebEngineFullScreenRequest;
 class QWebEngineHistory;
@@ -255,13 +254,9 @@ public:
 
     void replaceMisspelledWord(const QString &replacement);
 
-    virtual bool event(QEvent*);
+    bool event(QEvent*) override;
 
     void findText(const QString &subString, FindFlags options = FindFlags(), const QWebEngineCallback<bool> &resultCallback = QWebEngineCallback<bool>());
-
-#if QT_CONFIG(menu)
-    QMenu *createStandardContextMenu();
-#endif
 
     void setFeaturePermission(const QUrl &securityOrigin, Feature feature, PermissionPolicy policy);
 
@@ -300,8 +295,8 @@ public:
     QColor backgroundColor() const;
     void setBackgroundColor(const QColor &color);
 
-    void save(const QString &filePath, QWebEngineDownloadItem::SavePageFormat format
-                                                = QWebEngineDownloadItem::MimeHtmlSaveFormat) const;
+    void save(const QString &filePath, QWebEngineDownloadRequest::SavePageFormat format
+                                                = QWebEngineDownloadRequest::MimeHtmlSaveFormat) const;
 
     bool isAudioMuted() const;
     void setAudioMuted(bool muted);
@@ -318,8 +313,6 @@ public:
     QWebEnginePage *devToolsPage() const;
 
     void setUrlRequestInterceptor(QWebEngineUrlRequestInterceptor *interceptor);
-
-    const QWebEngineContextMenuData &contextMenuData() const;
 
     LifecycleState lifecycleState() const;
     void setLifecycleState(LifecycleState state);
@@ -344,10 +337,7 @@ Q_SIGNALS:
     void fullScreenRequested(QWebEngineFullScreenRequest fullScreenRequest);
     void quotaRequested(QWebEngineQuotaRequest quotaRequest);
     void registerProtocolHandlerRequested(QWebEngineRegisterProtocolHandlerRequest request);
-#if !defined(QT_NO_SSL) || QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
     void selectClientCertificate(QWebEngineClientCertificateSelection clientCertSelection);
-#endif
-
     void authenticationRequired(const QUrl &requestUrl, QAuthenticator *authenticator);
     void proxyAuthenticationRequired(const QUrl &requestUrl, QAuthenticator *authenticator, const QString &proxyHost);
 
@@ -382,7 +372,7 @@ protected:
     virtual bool javaScriptConfirm(const QUrl &securityOrigin, const QString& msg);
     virtual bool javaScriptPrompt(const QUrl &securityOrigin, const QString& msg, const QString& defaultValue, QString* result);
     virtual void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString& message, int lineNumber, const QString& sourceID);
-    virtual bool certificateError(const QWebEngineCertificateError &certificateError);
+    virtual void certificateError(QWebEngineCertificateError certificateError);
     virtual bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame);
 
 private:

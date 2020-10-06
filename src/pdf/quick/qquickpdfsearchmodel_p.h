@@ -62,8 +62,9 @@ class QQuickPdfSearchModel : public QPdfSearchModel
     Q_PROPERTY(QQuickPdfDocument *document READ document WRITE setDocument NOTIFY documentChanged)
     Q_PROPERTY(int currentPage READ currentPage WRITE setCurrentPage NOTIFY currentPageChanged)
     Q_PROPERTY(int currentResult READ currentResult WRITE setCurrentResult NOTIFY currentResultChanged)
-    Q_PROPERTY(QVector<QPolygonF> currentPageBoundingPolygons READ currentPageBoundingPolygons NOTIFY currentPageBoundingPolygonsChanged)
-    Q_PROPERTY(QVector<QPolygonF> currentResultBoundingPolygons READ currentResultBoundingPolygons NOTIFY currentResultBoundingPolygonsChanged)
+    Q_PROPERTY(QList<QPolygonF> currentPageBoundingPolygons READ currentPageBoundingPolygons NOTIFY currentPageBoundingPolygonsChanged)
+    Q_PROPERTY(QList<QPolygonF> currentResultBoundingPolygons READ currentResultBoundingPolygons NOTIFY currentResultBoundingPolygonsChanged)
+    Q_PROPERTY(QRectF currentResultBoundingRect READ currentResultBoundingRect NOTIFY currentResultBoundingRectChanged)
 
 public:
     explicit QQuickPdfSearchModel(QObject *parent = nullptr);
@@ -71,7 +72,7 @@ public:
     QQuickPdfDocument *document() const;
     void setDocument(QQuickPdfDocument * document);
 
-    Q_INVOKABLE QVector<QPolygonF> boundingPolygonsOnPage(int page);
+    Q_INVOKABLE QList<QPolygonF> boundingPolygonsOnPage(int page);
 
     int currentPage() const { return m_currentPage; }
     void setCurrentPage(int currentPage);
@@ -79,8 +80,9 @@ public:
     int currentResult() const { return m_currentResult; }
     void setCurrentResult(int currentResult);
 
-    QVector<QPolygonF> currentPageBoundingPolygons() const;
-    QVector<QPolygonF> currentResultBoundingPolygons() const;
+    QList<QPolygonF> currentPageBoundingPolygons() const;
+    QList<QPolygonF> currentResultBoundingPolygons() const;
+    QRectF currentResultBoundingRect() const;
 
 signals:
     void documentChanged();
@@ -88,6 +90,7 @@ signals:
     void currentResultChanged();
     void currentPageBoundingPolygonsChanged();
     void currentResultBoundingPolygonsChanged();
+    void currentResultBoundingRectChanged();
 
 private:
     void updateResults();

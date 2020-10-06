@@ -39,14 +39,18 @@
 
 #include "render_widget_host_view_qt_delegate_quick.h"
 
+#include "render_widget_host_view_qt_delegate_client.h"
+
 #include "qquickwebengineview_p.h"
 #include "qquickwebengineview_p_p.h"
 #include <QGuiApplication>
+#include <QOpenGLContext>
 #include <QQuickPaintedItem>
 #include <QQuickWindow>
 #include <QSurfaceFormat>
 #include <QVariant>
 #include <QWindow>
+#include <QtQuick/qsgimagenode.h>
 #include <QtQuick/private/qquickwindow_p.h>
 
 namespace QtWebEngineCore {
@@ -62,29 +66,12 @@ RenderWidgetHostViewQtDelegateQuick::RenderWidgetHostViewQtDelegateQuick(RenderW
         return;
     setFocus(true);
     setActiveFocusOnTab(true);
-
-#if defined(Q_OS_MACOS) && !defined(QT_NO_OPENGL)
-    // Check that the default QSurfaceFormat OpenGL profile is compatible with the global OpenGL
-    // shared context profile, otherwise this could lead to a nasty crash.
-    QOpenGLContext *globalSharedContext = QOpenGLContext::globalShareContext();
-    if (globalSharedContext) {
-        QSurfaceFormat sharedFormat = globalSharedContext->format();
-        QSurfaceFormat defaultFormat = QSurfaceFormat::defaultFormat();
-
-        if (defaultFormat.profile() != sharedFormat.profile()
-            && defaultFormat.profile() == QSurfaceFormat::CoreProfile
-            && defaultFormat.version() >= qMakePair(3, 2)) {
-            qFatal("QWebEngine: Default QSurfaceFormat OpenGL profile is not compatible with the "
-                   "global shared context OpenGL profile. Please make sure you set a compatible "
-                   "QSurfaceFormat before the QtGui application instance is created.");
-        }
-    }
-#endif
-
+    bind(client->compositorId());
 }
 
 RenderWidgetHostViewQtDelegateQuick::~RenderWidgetHostViewQtDelegateQuick()
 {
+    unbind();
     QQuickWebEngineViewPrivate::bindViewAndWidget(nullptr, this);
 }
 
@@ -163,30 +150,10 @@ QWindow* RenderWidgetHostViewQtDelegateQuick::window() const
     return QQuickItem::window();
 }
 
-QSGTexture *RenderWidgetHostViewQtDelegateQuick::createTextureFromImage(const QImage &image)
+void RenderWidgetHostViewQtDelegateQuick::readyToSwap()
 {
-    return QQuickItem::window()->createTextureFromImage(image, QQuickWindow::TextureCanUseAtlas);
-}
-
-QSGLayer *RenderWidgetHostViewQtDelegateQuick::createLayer()
-{
-    QSGRenderContext *renderContext = QQuickWindowPrivate::get(QQuickItem::window())->context;
-    return renderContext->sceneGraphContext()->createLayer(renderContext);
-}
-
-QSGImageNode *RenderWidgetHostViewQtDelegateQuick::createImageNode()
-{
-    return QQuickItem::window()->createImageNode();
-}
-
-QSGRectangleNode *RenderWidgetHostViewQtDelegateQuick::createRectangleNode()
-{
-    return QQuickItem::window()->createRectangleNode();
-}
-
-void RenderWidgetHostViewQtDelegateQuick::update()
-{
-    QQuickItem::update();
+    // Call update() on UI thread.
+    QMetaObject::invokeMethod(this, &QQuickItem::update, Qt::QueuedConnection);
 }
 
 void RenderWidgetHostViewQtDelegateQuick::updateCursor(const QCursor &cursor)
@@ -305,7 +272,8 @@ void RenderWidgetHostViewQtDelegateQuick::hoverMoveEvent(QHoverEvent *event)
 {
     QQuickItem *parent = parentItem();
     if ((!m_isPopup && parent && !parent->property("activeFocusOnPress").toBool()
-         && !parent->hasActiveFocus()) || event->posF() == event->oldPosF()) {
+         && !parent->hasActiveFocus())
+        || event->position() == event->oldPosF()) {
         event->ignore();
         return;
     }
@@ -327,9 +295,9 @@ void RenderWidgetHostViewQtDelegateQuick::inputMethodEvent(QInputMethodEvent *ev
     m_client->forwardEvent(event);
 }
 
-void RenderWidgetHostViewQtDelegateQuick::geometryChanged(const QRectF &newGeometry, const QRectF &oldGeometry)
+void RenderWidgetHostViewQtDelegateQuick::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry)
 {
-    QQuickItem::geometryChanged(newGeometry, oldGeometry);
+    QQuickItem::geometryChange(newGeometry, oldGeometry);
     m_client->visualPropertiesChanged();
 }
 
@@ -341,6 +309,8 @@ void RenderWidgetHostViewQtDelegateQuick::itemChange(ItemChange change, const It
             disconnect(c);
         m_windowConnections.clear();
         if (value.window) {
+            m_windowConnections.append(connect(value.window, SIGNAL(beforeRendering()),
+                                               SLOT(onBeforeRendering()), Qt::DirectConnection));
             m_windowConnections.append(connect(value.window, SIGNAL(xChanged(int)), SLOT(onWindowPosChanged())));
             m_windowConnections.append(connect(value.window, SIGNAL(yChanged(int)), SLOT(onWindowPosChanged())));
             if (!m_isPopup)
@@ -355,7 +325,54 @@ void RenderWidgetHostViewQtDelegateQuick::itemChange(ItemChange change, const It
 
 QSGNode *RenderWidgetHostViewQtDelegateQuick::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
-    return m_client->updatePaintNode(oldNode);
+    auto comp = compositor();
+    if (!comp)
+        return nullptr;
+
+    QQuickWindow *win = QQuickItem::window();
+
+    // Delete old node before swapFrame to decrement refcount of
+    // QImage in software mode.
+    delete oldNode;
+    QSGImageNode *node = win->createImageNode();
+    node->setOwnsTexture(true);
+
+    comp->swapFrame();
+
+    QSize texSize = comp->size();
+    QSizeF texSizeInDips = QSizeF(texSize) / comp->devicePixelRatio();
+    node->setRect(QRectF(QPointF(0, 0), texSizeInDips));
+
+    if (comp->type() == Compositor::Type::Software) {
+        QImage image = comp->image();
+        node->setTexture(win->createTextureFromImage(image));
+    } else if (comp->type() == Compositor::Type::OpenGL) {
+        QQuickWindow::CreateTextureOptions texOpts;
+        if (comp->hasAlphaChannel())
+            texOpts.setFlag(QQuickWindow::TextureHasAlphaChannel);
+        int texId = comp->textureId();
+        node->setTexture(QPlatformInterface::QSGOpenGLTexture::fromNative(texId, win, texSize, texOpts));
+        node->setTextureCoordinatesTransform(QSGImageNode::MirrorVertically);
+    } else {
+        Q_UNREACHABLE();
+    }
+
+#if QT_CONFIG(webengine_testsupport)
+    if (m_view)
+        QMetaObject::invokeMethod(
+                m_view, [view = m_view]() { view->d_ptr->didCompositorFrameSwap(); },
+                Qt::QueuedConnection);
+#endif
+
+    return node;
+}
+
+void RenderWidgetHostViewQtDelegateQuick::onBeforeRendering()
+{
+    auto comp = compositor();
+    if (!comp || comp->type() != Compositor::Type::OpenGL)
+        return;
+    comp->waitForTexture();
 }
 
 void RenderWidgetHostViewQtDelegateQuick::onWindowPosChanged()
@@ -367,17 +384,6 @@ void RenderWidgetHostViewQtDelegateQuick::onHide()
 {
     QFocusEvent event(QEvent::FocusOut, Qt::OtherFocusReason);
     m_client->forwardEvent(&event);
-}
-
-bool RenderWidgetHostViewQtDelegateQuick::copySurface(const QRect &rect, const QSize &size, QImage &image)
-{
-    image = QQuickItem::window()->grabWindow();
-    if (image.isNull())
-        return false;
-    QRect subrect = !rect.isEmpty() ? rect : image.rect();
-    image = image.copy(subrect);
-    image = image.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    return true;
 }
 
 #if QT_CONFIG(accessibility)

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the QtPDF module of the Qt Toolkit.
@@ -38,10 +38,11 @@
 #define QPDFDOCUMENT_H
 
 #include <QtPdf/qtpdfglobal.h>
-#include <QImage>
-#include <QObject>
-#include <QtPdf/QPdfDocumentRenderOptions>
-#include "qpdfselection.h"
+
+#include <QtCore/qobject.h>
+#include <QtGui/qimage.h>
+#include <QtPdf/qpdfdocumentrenderoptions.h>
+#include <QtPdf/qpdfselection.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -113,6 +114,8 @@ public:
     QImage render(int page, QSize imageSize, QPdfDocumentRenderOptions options = QPdfDocumentRenderOptions());
 
     Q_INVOKABLE QPdfSelection getSelection(int page, QPointF start, QPointF end);
+    Q_INVOKABLE QPdfSelection getSelectionAtIndex(int page, int startIndex, int maxLength);
+    Q_INVOKABLE QPdfSelection getAllText(int page);
 
 Q_SIGNALS:
     void passwordChanged();
@@ -125,6 +128,7 @@ private:
     friend class QPdfLinkModelPrivate;
     friend class QPdfSearchModel;
     friend class QPdfSearchModelPrivate;
+    friend class QQuickPdfSelection;
 
     Q_PRIVATE_SLOT(d, void _q_tryLoadingWithSizeFromContentHeader())
     Q_PRIVATE_SLOT(d, void _q_copyFromSequentialSourceDevice())

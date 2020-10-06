@@ -51,11 +51,16 @@
 // We mean it.
 //
 
+#include <QtWebEngineCore/qtwebenginecoreglobal.h>
 #include <QtWebEngine/private/qtwebengineglobal_p.h>
 #include <QQuickItem>
 #include <QtGui/qcolor.h>
 
-#include "qquickwebenginescript.h"
+#include "qquickwebengineprofile.h"
+
+namespace QtWebEngineCore {
+class RenderWidgetHostViewQtDelegateQuick;
+}
 
 QT_BEGIN_NAMESPACE
 
@@ -63,10 +68,8 @@ class QQmlWebChannel;
 class QQuickContextMenuBuilder;
 class QQuickWebEngineAction;
 class QQuickWebEngineAuthenticationDialogRequest;
-class QQuickWebEngineCertificateError;
 class QQuickWebEngineClientCertificateSelection;
 class QQuickWebEngineColorDialogRequest;
-class QQuickWebEngineContextMenuRequest;
 class QQuickWebEngineFaviconProvider;
 class QQuickWebEngineFileDialogRequest;
 class QQuickWebEngineHistory;
@@ -74,37 +77,21 @@ class QQuickWebEngineJavaScriptDialogRequest;
 class QQuickWebEngineLoadRequest;
 class QQuickWebEngineNavigationRequest;
 class QQuickWebEngineNewViewRequest;
-class QQuickWebEngineProfile;
 class QQuickWebEngineSettings;
 class QQuickWebEngineTooltipRequest;
 class QQuickWebEngineFormValidationMessageRequest;
 class QQuickWebEngineViewPrivate;
+class QWebEngineCertificateError;
 class QWebEngineFindTextResult;
+class QWebEngineFullScreenRequest;
 class QWebEngineQuotaRequest;
 class QWebEngineRegisterProtocolHandlerRequest;
+class QWebEngineContextMenuRequest;
+class QQuickWebEngineScriptCollection;
 
 #if QT_CONFIG(webengine_testsupport)
 class QQuickWebEngineTestSupport;
 #endif
-
-class Q_WEBENGINE_PRIVATE_EXPORT QQuickWebEngineFullScreenRequest {
-    Q_GADGET
-    Q_PROPERTY(QUrl origin READ origin CONSTANT FINAL)
-    Q_PROPERTY(bool toggleOn READ toggleOn CONSTANT FINAL)
-public:
-    QQuickWebEngineFullScreenRequest();
-    QQuickWebEngineFullScreenRequest(QQuickWebEngineViewPrivate *viewPrivate, const QUrl &origin, bool toggleOn);
-
-    Q_INVOKABLE void accept();
-    Q_INVOKABLE void reject();
-    QUrl origin() const { return m_origin; }
-    bool toggleOn() const { return m_toggleOn; }
-
-private:
-    QQuickWebEngineViewPrivate *m_viewPrivate;
-    const QUrl m_origin;
-    const bool m_toggleOn;
-};
 
 #define LATEST_WEBENGINEVIEW_REVISION 10
 
@@ -123,8 +110,10 @@ class Q_WEBENGINE_PRIVATE_EXPORT QQuickWebEngineView : public QQuickItem {
     Q_PROPERTY(QQuickWebEngineProfile *profile READ profile WRITE setProfile NOTIFY profileChanged FINAL REVISION 1)
     Q_PROPERTY(QQuickWebEngineSettings *settings READ settings REVISION 1 CONSTANT FINAL)
     Q_PROPERTY(QQuickWebEngineHistory *navigationHistory READ navigationHistory CONSTANT FINAL REVISION 1)
+#if QT_CONFIG(webengine_webchannel)
     Q_PROPERTY(QQmlWebChannel *webChannel READ webChannel WRITE setWebChannel NOTIFY webChannelChanged REVISION 1 FINAL)
-    Q_PROPERTY(QQmlListProperty<QQuickWebEngineScript> userScripts READ userScripts FINAL REVISION 1)
+#endif
+    Q_PROPERTY(QQuickWebEngineScriptCollection *userScripts READ userScripts FINAL REVISION 1)
     Q_PROPERTY(bool activeFocusOnPress READ activeFocusOnPress WRITE setActiveFocusOnPress NOTIFY activeFocusOnPressChanged REVISION 2 FINAL)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY backgroundColorChanged REVISION 2 FINAL)
     Q_PROPERTY(QSizeF contentsSize READ contentsSize NOTIFY contentsSizeChanged FINAL REVISION 3)
@@ -481,7 +470,7 @@ public:
 
     QQuickWebEngineProfile *profile();
     void setProfile(QQuickWebEngineProfile *);
-    QQmlListProperty<QQuickWebEngineScript> userScripts();
+    QQuickWebEngineScriptCollection *userScripts();
 
     QQuickWebEngineSettings *settings();
     QQmlWebChannel *webChannel();
@@ -545,8 +534,8 @@ Q_SIGNALS:
     void linkHovered(const QUrl &hoveredUrl);
     void navigationRequested(QQuickWebEngineNavigationRequest *request);
     void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString &message, int lineNumber, const QString &sourceID);
-    Q_REVISION(1) void certificateError(QQuickWebEngineCertificateError *error);
-    Q_REVISION(1) void fullScreenRequested(const QQuickWebEngineFullScreenRequest &request);
+    Q_REVISION(1) void certificateError(const QWebEngineCertificateError &error);
+    Q_REVISION(1) void fullScreenRequested(const QWebEngineFullScreenRequest &request);
     Q_REVISION(1) void isFullScreenChanged();
     Q_REVISION(1) void featurePermissionRequested(const QUrl &securityOrigin, Feature feature);
     Q_REVISION(1) void newViewRequested(QQuickWebEngineNewViewRequest *request);
@@ -562,7 +551,7 @@ Q_SIGNALS:
     Q_REVISION(3) void audioMutedChanged(bool muted);
     Q_REVISION(3) void recentlyAudibleChanged(bool recentlyAudible);
     Q_REVISION(3) void webChannelWorldChanged(uint);
-    Q_REVISION(4) void contextMenuRequested(QQuickWebEngineContextMenuRequest *request);
+    Q_REVISION(4) void contextMenuRequested(QWebEngineContextMenuRequest *request);
     Q_REVISION(4) void authenticationDialogRequested(QQuickWebEngineAuthenticationDialogRequest *request);
     Q_REVISION(4) void javaScriptDialogRequested(QQuickWebEngineJavaScriptDialogRequest *request);
     Q_REVISION(4) void colorDialogRequested(QQuickWebEngineColorDialogRequest *request);
@@ -587,7 +576,7 @@ Q_SIGNALS:
 #endif
 
 protected:
-    void geometryChanged(const QRectF &newGeometry, const QRectF &oldGeometry) override;
+    void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
     void itemChange(ItemChange, const ItemChangeData &) override;
 #if QT_CONFIG(draganddrop)
     void dragEnterEvent(QDragEnterEvent *e) override;
@@ -600,6 +589,7 @@ private:
     Q_DECLARE_PRIVATE(QQuickWebEngineView)
     QScopedPointer<QQuickWebEngineViewPrivate> d_ptr;
 
+    friend class QtWebEngineCore::RenderWidgetHostViewQtDelegateQuick;
     friend class QQuickContextMenuBuilder;
     friend class QQuickWebEngineNewViewRequest;
     friend class QQuickWebEngineFaviconProvider;
@@ -611,6 +601,5 @@ private:
 QT_END_NAMESPACE
 
 QML_DECLARE_TYPE(QQuickWebEngineView)
-Q_DECLARE_METATYPE(QQuickWebEngineFullScreenRequest)
 
 #endif // QQUICKWEBENGINEVIEW_P_H

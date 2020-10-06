@@ -52,7 +52,8 @@
 //
 
 #include <QtWebEngineWidgets/qwebengineview.h>
-
+#include "qwebenginecontextmenurequest.h"
+#include "render_view_context_menu_qt.h"
 #include <QtWidgets/qaccessiblewidget.h>
 
 namespace QtWebEngineCore {
@@ -72,12 +73,14 @@ public:
     void pageChanged(QWebEnginePage *oldPage, QWebEnginePage *newPage);
     void widgetChanged(QtWebEngineCore::RenderWidgetHostViewQtDelegateWidget *oldWidget,
                        QtWebEngineCore::RenderWidgetHostViewQtDelegateWidget *newWidget);
+    void contextMenuRequested(QWebEngineContextMenuRequest *request);
 
     QWebEngineViewPrivate();
 
     QWebEnginePage *page;
     bool m_dragEntered;
     mutable bool m_ownsPage;
+    QWebEngineContextMenuRequest *m_contextRequest;
 };
 
 #ifndef QT_NO_ACCESSIBILITY
@@ -97,6 +100,22 @@ private:
     QWebEngineView *view() const { return static_cast<QWebEngineView*>(object()); }
 };
 #endif // QT_NO_ACCESSIBILITY
+
+class QContextMenuBuilder : public QtWebEngineCore::RenderViewContextMenuQt
+{
+public:
+    QContextMenuBuilder(QWebEngineContextMenuRequest *reqeust, QWebEngineView *view, QMenu *menu);
+
+private:
+    virtual bool hasInspector() override;
+    virtual bool isFullScreenMode() override;
+
+    virtual void addMenuItem(ContextMenuItem entry) override;
+    virtual bool isMenuItemEnabled(ContextMenuItem entry) override;
+
+    QWebEngineView *m_view;
+    QMenu *m_menu;
+};
 
 QT_END_NAMESPACE
 

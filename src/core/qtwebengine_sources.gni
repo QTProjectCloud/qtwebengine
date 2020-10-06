@@ -39,18 +39,32 @@ source_set("qtwebengine_spellcheck_sources") {
   }
 }
 
+config("cpp17_config") {
+  # static initialized constexpr expressions must be compiled always as c++14 or always as c++17
+  # and our qtwebengine core sources use them as c++17
+  if (is_win) {
+    cflags_cc = [ "/std:c++17" ]
+  } else {
+    cflags_cc = [ "-std=c++17" ]
+  }
+}
+
 source_set("qtwebengine_sources") {
   configs += [
+    ":cpp17_config",
     "//skia:skia_config",
     "//third_party/boringssl:external_config",
   ]
 
   deps = [
     "//build:branding_buildflags",
+    "//chrome/browser/resources/quota_internals:quota_internals_resources",
     "//chrome/common:buildflags",
     "//components/nacl/common:buildflags",
+    "//components/performance_manager",
     "//components/plugins/renderer/",
     "//extensions/buildflags:buildflags",
+    "//rlz/buildflags:buildflags",
     "//third_party/blink/public/mojom:mojom_platform",
   ]
 
@@ -64,8 +78,12 @@ source_set("qtwebengine_sources") {
     "//chrome/browser/media/webrtc/desktop_media_list.h",
     "//chrome/browser/net/chrome_mojo_proxy_resolver_factory.cc",
     "//chrome/browser/net/chrome_mojo_proxy_resolver_factory.h",
+    "//chrome/browser/prefs/chrome_command_line_pref_store.cc",
+    "//chrome/browser/prefs/chrome_command_line_pref_store.h",
     "//chrome/browser/profiles/profile.cc",
     "//chrome/browser/profiles/profile.h",
+    "//chrome/browser/tab_contents/form_interaction_tab_helper.cc",
+    "//chrome/browser/tab_contents/form_interaction_tab_helper.h",
     "//chrome/browser/ui/webui/devtools_ui.cc",
     "//chrome/browser/ui/webui/devtools_ui.h",
     "//chrome/browser/ui/webui/devtools_ui_data_source.cc",

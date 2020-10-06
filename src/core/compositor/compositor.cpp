@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -39,149 +39,159 @@
 
 #include "compositor.h"
 
-#include "compositor_resource_tracker.h"
-#include "delegated_frame_node.h"
+#include "base/memory/ref_counted.h"
+#include "components/viz/common/surfaces/frame_sink_id.h"
 
-#include "base/task/post_task.h"
-#include "components/viz/common/resources/returned_resource.h"
-#include "content/public/browser/browser_task_traits.h"
-#include "content/public/browser/browser_thread.h"
-#include "services/viz/privileged/mojom/compositing/frame_sink_manager.mojom.h"
+#include <QHash>
+#include <QImage>
+#include <QMutex>
 
 namespace QtWebEngineCore {
 
-Compositor::Compositor(content::RenderWidgetHost *host)
-    : m_resourceTracker(new CompositorResourceTracker)
-    , m_host(host)
-{
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+// Compositor::Id
 
-    m_taskRunner = base::CreateSingleThreadTaskRunner({content::BrowserThread::UI, base::TaskPriority::USER_VISIBLE});
-    m_beginFrameSource =
-        std::make_unique<viz::DelayBasedBeginFrameSource>(
-            std::make_unique<viz::DelayBasedTimeSource>(m_taskRunner.get()),
-            viz::BeginFrameSource::kNotRestartableId);
+Compositor::Id::Id(viz::FrameSinkId fid) : client_id(fid.client_id()), sink_id(fid.sink_id()) { }
+
+static size_t qHash(Compositor::Id id, size_t seed = 0)
+{
+    QtPrivate::QHashCombine hasher;
+    seed = hasher(seed, id.client_id);
+    seed = hasher(seed, id.sink_id);
+    return seed;
 }
 
-Compositor::~Compositor()
+static bool operator==(Compositor::Id id1, Compositor::Id id2)
 {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    return id1.client_id == id2.client_id && id1.sink_id == id2.sink_id;
 }
 
-void Compositor::setFrameSinkClient(viz::mojom::CompositorFrameSinkClient *frameSinkClient)
+// Compositor::Binding and Compositor::Bindings
+
+struct Compositor::Binding
 {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    const Id id;
+    Compositor *compositor = nullptr;
+    Observer *observer = nullptr;
 
-    if (m_frameSinkClient == frameSinkClient)
-        return;
+    Binding(Id id) : id(id) { }
+    ~Binding();
+};
 
-    // Accumulated resources belong to the old RendererCompositorFrameSink and
-    // should not be returned.
-    //
-    // TODO(juvaldma): Can there be a pending frame from the old client?
-    m_resourceTracker->returnResources();
-    m_frameSinkClient = frameSinkClient;
-}
-
-void Compositor::setNeedsBeginFrames(bool needsBeginFrames)
+class Compositor::BindingMap
 {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+public:
+    void lock() { m_mutex.lock(); }
 
-    if (m_needsBeginFrames == needsBeginFrames)
-        return;
+    void unlock() { m_mutex.unlock(); }
 
-    if (needsBeginFrames)
-        m_beginFrameSource->AddObserver(this);
-    else
-        m_beginFrameSource->RemoveObserver(this);
-
-    m_needsBeginFrames = needsBeginFrames;
-}
-
-void Compositor::submitFrame(viz::CompositorFrame frame, base::OnceClosure callback)
-{
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    DCHECK(!m_submitCallback);
-
-    m_pendingFrame = std::move(frame);
-    m_submitCallback = std::move(callback);
-    m_resourceTracker->submitResources(
-        m_pendingFrame,
-        base::BindOnce(&Compositor::runSubmitCallback, base::Unretained(this)));
-}
-
-QSGNode *Compositor::updatePaintNode(QSGNode *oldNode, RenderWidgetHostViewQtDelegate *viewDelegate)
-{
-    // DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    //
-    // This might be called from a Qt Quick render thread, but the UI thread
-    // will still be blocked for the duration of this call.
-
-    DelegatedFrameNode *frameNode = static_cast<DelegatedFrameNode *>(oldNode);
-    if (!frameNode)
-        frameNode = new DelegatedFrameNode;
-
-    if (!m_updatePaintNodeShouldCommit) {
-        frameNode->commit(m_committedFrame, viz::CompositorFrame(), m_resourceTracker.get(), viewDelegate);
-        return frameNode;
-    }
-    m_updatePaintNodeShouldCommit = false;
-
-    m_presentations.emplace(m_committedFrame.metadata.frame_token, viz::FrameTimingDetails{base::TimeTicks::Now()});
-
-    m_resourceTracker->commitResources();
-    frameNode->commit(m_pendingFrame, m_committedFrame, m_resourceTracker.get(), viewDelegate);
-    m_committedFrame = std::move(m_pendingFrame);
-    m_pendingFrame = viz::CompositorFrame();
-
-    m_taskRunner->PostTask(FROM_HERE,
-                           base::BindOnce(&Compositor::notifyFrameCommitted, m_weakPtrFactory.GetWeakPtr()));
-
-    return frameNode;
-}
-
-void Compositor::runSubmitCallback()
-{
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-    m_updatePaintNodeShouldCommit = true;
-    std::move(m_submitCallback).Run();
-}
-
-void Compositor::notifyFrameCommitted()
-{
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-    m_beginFrameSource->DidFinishFrame(this);
-    if (m_frameSinkClient)
-        m_frameSinkClient->DidReceiveCompositorFrameAck(m_resourceTracker->returnResources());
-}
-
-void Compositor::sendPresentationFeedback(uint frame_token)
-{
-    viz::FrameTimingDetails dummyDetails = {base::TimeTicks::Now()};
-    m_presentations.emplace(frame_token, dummyDetails);
-}
-
-bool Compositor::OnBeginFrameDerivedImpl(const viz::BeginFrameArgs &args)
-{
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-    ProgressFlingIfNeeded(m_host, args.frame_time);
-    m_beginFrameSource->OnUpdateVSyncParameters(args.frame_time, args.interval);
-    if (m_frameSinkClient) {
-        m_frameSinkClient->OnBeginFrame(args, m_presentations);
-        m_presentations.clear();
+    Binding *findOrCreate(Id id)
+    {
+        auto it = m_map.find(id);
+        if (it == m_map.end())
+            it = m_map.insert(id, new Binding(id));
+        return *it;
     }
 
-    return true;
-}
+    void remove(Id id) { m_map.remove(id); }
 
-void Compositor::OnBeginFrameSourcePausedChanged(bool)
+private:
+    QMutex m_mutex;
+    QHash<Id, Binding *> m_map;
+} static g_bindings;
+
+Compositor::Binding::~Binding()
 {
-    // Ignored for now.  If the begin frame source is paused, the renderer
-    // doesn't need to be informed about it and will just not receive more
-    // begin frames.
+    g_bindings.remove(id);
 }
 
+// Compositor::Observer
+
+void Compositor::Observer::bind(Id id)
+{
+    DCHECK(!m_binding);
+    g_bindings.lock();
+    m_binding = g_bindings.findOrCreate(id);
+    DCHECK(!m_binding->observer);
+    m_binding->observer = this;
+    g_bindings.unlock();
+}
+
+void Compositor::Observer::unbind()
+{
+    DCHECK(m_binding);
+    g_bindings.lock();
+    m_binding->observer = nullptr;
+    if (m_binding->compositor == nullptr)
+        delete m_binding;
+    m_binding = nullptr;
+    g_bindings.unlock();
+}
+
+Compositor::Handle<Compositor> Compositor::Observer::compositor()
+{
+    if (!m_binding)
+        return nullptr;
+    g_bindings.lock();
+    if (m_binding->compositor)
+        return m_binding->compositor; // delay unlock
+    g_bindings.unlock();
+    return nullptr;
+}
+
+// Compositor
+
+void Compositor::bind(Id id)
+{
+    DCHECK(!m_binding);
+    g_bindings.lock();
+    m_binding = g_bindings.findOrCreate(id);
+    DCHECK(!m_binding->compositor);
+    m_binding->compositor = this;
+    g_bindings.unlock();
+}
+
+void Compositor::unbind()
+{
+    DCHECK(m_binding);
+    g_bindings.lock();
+    m_binding->compositor = nullptr;
+    if (m_binding->observer == nullptr)
+        delete m_binding;
+    m_binding = nullptr;
+    g_bindings.unlock();
+}
+
+Compositor::Handle<Compositor::Observer> Compositor::observer()
+{
+    if (!m_binding)
+        return nullptr;
+    g_bindings.lock();
+    if (m_binding->observer)
+        return m_binding->observer; // delay unlock
+    g_bindings.unlock();
+    return nullptr;
+}
+
+QImage Compositor::image()
+{
+    Q_UNREACHABLE();
+    return {};
+}
+
+void Compositor::waitForTexture()
+{
+    Q_UNREACHABLE();
+}
+
+int Compositor::textureId()
+{
+    Q_UNREACHABLE();
+    return 0;
+}
+
+// static
+void Compositor::unlockBindings()
+{
+    g_bindings.unlock();
+}
 } // namespace QtWebEngineCore

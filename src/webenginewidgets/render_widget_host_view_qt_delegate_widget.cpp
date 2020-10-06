@@ -39,6 +39,8 @@
 
 #include "render_widget_host_view_qt_delegate_widget.h"
 
+#include "render_widget_host_view_qt_delegate_client.h"
+
 #include "qwebenginepage_p.h"
 #include "qwebengineview.h"
 #include "qwebengineview_p.h"
@@ -47,21 +49,26 @@
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QResizeEvent>
-#include <QSGAbstractRenderer>
 #include <QSGNode>
 #include <QWindow>
+#include <QtQuick/qsgimagenode.h>
 #include <QtQuick/private/qquickwindow_p.h>
 
 namespace QtWebEngineCore {
 
-class RenderWidgetHostViewQuickItem : public QQuickItem {
+class RenderWidgetHostViewQuickItem : public QQuickItem, public Compositor::Observer
+{
 public:
     RenderWidgetHostViewQuickItem(RenderWidgetHostViewQtDelegateClient *client) : m_client(client)
     {
         setFlag(ItemHasContents, true);
         // Mark that this item should receive focus when the parent QQuickWidget receives focus.
         setFocus(true);
+
+        bind(client->compositorId());
     }
+    ~RenderWidgetHostViewQuickItem() { unbind(); }
+
 protected:
     bool event(QEvent *event) override
     {
@@ -82,17 +89,76 @@ protected:
     {
         m_client->forwardEvent(event);
     }
+    void itemChange(ItemChange change, const ItemChangeData &value) override
+    {
+        QQuickItem::itemChange(change, value);
+        if (change == QQuickItem::ItemSceneChange) {
+            for (const QMetaObject::Connection &c : qAsConst(m_windowConnections))
+                disconnect(c);
+            m_windowConnections.clear();
+            if (value.window) {
+                m_windowConnections.append(connect(
+                        value.window, &QQuickWindow::beforeRendering, this,
+                        &RenderWidgetHostViewQuickItem::onBeforeRendering, Qt::DirectConnection));
+            }
+        }
+    }
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override
     {
-        return m_client->updatePaintNode(oldNode);
-    }
+        auto comp = compositor();
+        if (!comp)
+            return nullptr;
 
+        QQuickWindow *win = QQuickItem::window();
+
+        // Delete old node before swapFrame to decrement refcount of
+        // QImage in software mode.
+        delete oldNode;
+        QSGImageNode *node = win->createImageNode();
+        node->setOwnsTexture(true);
+
+        comp->swapFrame();
+
+        QSize texSize = comp->size();
+        QSizeF texSizeInDips = QSizeF(texSize) / comp->devicePixelRatio();
+        node->setRect(QRectF(QPointF(0, 0), texSizeInDips));
+
+        if (comp->type() == Compositor::Type::Software) {
+            QImage image = comp->image();
+            node->setTexture(win->createTextureFromImage(image));
+        } else if (comp->type() == Compositor::Type::OpenGL) {
+            QQuickWindow::CreateTextureOptions texOpts;
+            if (comp->hasAlphaChannel())
+                texOpts.setFlag(QQuickWindow::TextureHasAlphaChannel);
+            int texId = comp->textureId();
+            node->setTexture(QPlatformInterface::QSGOpenGLTexture::fromNative(texId, win, texSize, texOpts));
+            node->setTextureCoordinatesTransform(QSGImageNode::MirrorVertically);
+        } else {
+            Q_UNREACHABLE();
+        }
+
+        return node;
+    }
+    void onBeforeRendering()
+    {
+        auto comp = compositor();
+        if (!comp || comp->type() != Compositor::Type::OpenGL)
+            return;
+        comp->waitForTexture();
+    }
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override
     {
         return m_client->inputMethodQuery(query);
     }
+    void readyToSwap() override
+    {
+        // Call update() on UI thread.
+        QMetaObject::invokeMethod(this, &QQuickItem::update, Qt::QueuedConnection);
+    }
+
 private:
     RenderWidgetHostViewQtDelegateClient *m_client;
+    QList<QMetaObject::Connection> m_windowConnections;
 };
 
 RenderWidgetHostViewQtDelegateWidget::RenderWidgetHostViewQtDelegateWidget(RenderWidgetHostViewQtDelegateClient *client, QWidget *parent)
@@ -102,62 +168,6 @@ RenderWidgetHostViewQtDelegateWidget::RenderWidgetHostViewQtDelegateWidget(Rende
     , m_isPopup(false)
 {
     setFocusPolicy(Qt::StrongFocus);
-
-    QSurfaceFormat format;
-    format.setDepthBufferSize(24);
-    format.setStencilBufferSize(8);
-
-#ifndef QT_NO_OPENGL
-    QOpenGLContext *globalSharedContext = QOpenGLContext::globalShareContext();
-    if (globalSharedContext) {
-        QSurfaceFormat sharedFormat = globalSharedContext->format();
-
-#ifdef Q_OS_OSX
-        // Check that the default QSurfaceFormat OpenGL profile is compatible with the global OpenGL
-        // shared context profile, otherwise this could lead to a nasty crash.
-        QSurfaceFormat defaultFormat = QSurfaceFormat::defaultFormat();
-
-        if (defaultFormat.profile() != sharedFormat.profile()
-            && defaultFormat.profile() == QSurfaceFormat::CoreProfile
-            && defaultFormat.version() >= qMakePair(3, 2)) {
-            qFatal("QWebEngine: Default QSurfaceFormat OpenGL profile is not compatible with the "
-                   "global shared context OpenGL profile. Please make sure you set a compatible "
-                   "QSurfaceFormat before the QtGui application instance is created.");
-        }
-#endif
-        int major;
-        int minor;
-        QSurfaceFormat::OpenGLContextProfile profile;
-#ifdef Q_OS_MACOS
-        // Due to QTBUG-63180, requesting the sharedFormat.majorVersion() on macOS will lead to
-        // a failed creation of QQuickWidget shared context. Thus make sure to request the
-        // major version specified in the defaultFormat instead.
-        major = defaultFormat.majorVersion();
-        minor = defaultFormat.minorVersion();
-        profile = defaultFormat.profile();
-#else
-        major = sharedFormat.majorVersion();
-        minor = sharedFormat.minorVersion();
-        profile = sharedFormat.profile();
-#endif
-
-        // Make sure the OpenGL profile of the QQuickWidget matches the shared context profile.
-        // It covers the following cases:
-        // 1) Desktop OpenGL Core Profile.
-        // 2) Windows ANGLE OpenGL ES profile.
-        if (sharedFormat.profile() == QSurfaceFormat::CoreProfile
-#ifdef Q_OS_WIN
-                || globalSharedContext->isOpenGLES()
-#endif
-                ) {
-            format.setMajorVersion(major);
-            format.setMinorVersion(minor);
-            format.setProfile(profile);
-        }
-    }
-
-    setFormat(format);
-#endif
     setMouseTracking(true);
     setAttribute(Qt::WA_AcceptTouchEvents);
     setAttribute(Qt::WA_OpaquePaintEvent);
@@ -291,32 +301,6 @@ QWindow* RenderWidgetHostViewQtDelegateWidget::window() const
     return root ? root->windowHandle() : 0;
 }
 
-QSGTexture *RenderWidgetHostViewQtDelegateWidget::createTextureFromImage(const QImage &image)
-{
-    return quickWindow()->createTextureFromImage(image, QQuickWindow::TextureCanUseAtlas);
-}
-
-QSGLayer *RenderWidgetHostViewQtDelegateWidget::createLayer()
-{
-    QSGRenderContext *renderContext = QQuickWindowPrivate::get(quickWindow())->context;
-    return renderContext->sceneGraphContext()->createLayer(renderContext);
-}
-
-QSGImageNode *RenderWidgetHostViewQtDelegateWidget::createImageNode()
-{
-    return quickWindow()->createImageNode();
-}
-
-QSGRectangleNode *RenderWidgetHostViewQtDelegateWidget::createRectangleNode()
-{
-    return quickWindow()->createRectangleNode();
-}
-
-void RenderWidgetHostViewQtDelegateWidget::update()
-{
-    m_rootItem->update();
-}
-
 void RenderWidgetHostViewQtDelegateWidget::updateCursor(const QCursor &cursor)
 {
     QQuickWidget::setCursor(cursor);
@@ -393,15 +377,6 @@ void RenderWidgetHostViewQtDelegateWidget::hideEvent(QHideEvent *event)
     m_client->notifyHidden();
 }
 
-bool RenderWidgetHostViewQtDelegateWidget::copySurface(const QRect &rect, const QSize &size, QImage &image)
-{
-    QPixmap pixmap = rect.isEmpty() ? QQuickWidget::grab(QQuickWidget::rect()) : QQuickWidget::grab(rect);
-    if (pixmap.isNull())
-        return false;
-    image = pixmap.toImage().scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    return true;
-}
-
 bool RenderWidgetHostViewQtDelegateWidget::event(QEvent *event)
 {
     bool handled = false;
@@ -465,8 +440,9 @@ bool RenderWidgetHostViewQtDelegateWidget::event(QEvent *event)
         // QtQuick is different by sending both the Press and DblClick events for the second press
         // where we can simply ignore the DblClick event.
         QMouseEvent *dblClick = static_cast<QMouseEvent *>(event);
-        QMouseEvent press(QEvent::MouseButtonPress, dblClick->localPos(), dblClick->windowPos(), dblClick->screenPos(),
-            dblClick->button(), dblClick->buttons(), dblClick->modifiers(), dblClick->source());
+        QMouseEvent press(QEvent::MouseButtonPress, dblClick->position(), dblClick->scenePosition(),
+                          dblClick->globalPosition(), dblClick->button(), dblClick->buttons(),
+                          dblClick->modifiers(), dblClick->source());
         press.setTimestamp(dblClick->timestamp());
         handled = m_client->forwardEvent(&press);
     } else
@@ -474,9 +450,14 @@ bool RenderWidgetHostViewQtDelegateWidget::event(QEvent *event)
 
     if (!handled)
         return QQuickWidget::event(event);
-    // Most events are accepted by default, but tablet events are not:
     event->accept();
     return true;
+}
+
+void RenderWidgetHostViewQtDelegateWidget::unhandledWheelEvent(QWheelEvent *ev)
+{
+    if (QWidget *p = parentWidget())
+        qApp->sendEvent(p, ev);
 }
 
 void RenderWidgetHostViewQtDelegateWidget::onWindowPosChanged()

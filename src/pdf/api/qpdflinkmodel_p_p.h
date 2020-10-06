@@ -74,7 +74,7 @@ public:
         // destination inside PDF
         int page = -1; // -1 means look at the url instead
         QPointF location;
-        qreal zoom = 1;
+        qreal zoom = 0; // 0 means no specified zoom: don't change when clicking
         // web destination
         QUrl url;
 
@@ -82,7 +82,7 @@ public:
     };
 
     QPdfDocument *document = nullptr;
-    QVector<Link> links;
+    QList<Link> links;
     int page = 0;
 };
 

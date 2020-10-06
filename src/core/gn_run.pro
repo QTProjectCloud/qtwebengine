@@ -4,7 +4,8 @@ QT_FOR_CONFIG += buildtools-private webenginecore-private core-private gui-priva
 
 TEMPLATE = aux
 
-qtConfig(debug_and_release): CONFIG += debug_and_release build_all
+qtConfig(debug_and_release): CONFIG += debug_and_release
+qtConfig(build_all): CONFIG += build_all
 
 QT_TOOL.ninja.binary = $$shell_quote($$shell_path($$ninjaPath()))
 
@@ -24,7 +25,7 @@ build_pass|!debug_and_release {
 
     runninja.target = run_ninja
 
-    gn_args = $$gnArgs()
+    gn_args = $$gnWebEngineArgs()
 
     gn_args += "qtwebengine_target=\"$$system_path($$OUT_PWD/$$getConfigDir()):QtWebEngineCore\""
 
@@ -60,3 +61,8 @@ build_pass|!debug_and_release {
     notParallel.target = .NOTPARALLEL
     QMAKE_EXTRA_TARGETS += notParallel
 }
+
+build_pass:CONFIG(debug, debug|release) {
+    TARGET = gn_run_debug
+}
+

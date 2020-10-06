@@ -52,6 +52,7 @@
 //
 
 #include "qquickwebengineview_p.h"
+#include "qquickwebenginescriptcollection.h"
 #include "render_view_context_menu_qt.h"
 #include "touch_handle_drawable_client.h"
 #include "web_contents_adapter_client.h"
@@ -75,14 +76,12 @@ QT_BEGIN_NAMESPACE
 class QQuickWebEngineView;
 class QQmlComponent;
 class QQmlContext;
-class QQuickWebEngineContextMenuRequest;
+class QWebEngineContextMenuRequest;
 class QQuickWebEngineSettings;
 class QQuickWebEngineFaviconProvider;
 class QQuickWebEngineProfilePrivate;
 class QQuickWebEngineTouchHandleProvider;
 class QWebEngineFindTextResult;
-
-QQuickWebEngineView::WebAction editorActionForKeyEvent(QKeyEvent* event);
 
 #if QT_CONFIG(webengine_testsupport)
 class QQuickWebEngineTestSupport;
@@ -117,17 +116,20 @@ public:
     QColor backgroundColor() const override;
     void loadStarted(const QUrl &provisionalUrl, bool isErrorPage = false) override;
     void loadCommitted() override;
-    void loadVisuallyCommitted() override;
+    void didFirstVisuallyNonEmptyPaint() override;
     void loadFinished(bool success, const QUrl &url, bool isErrorPage = false, int errorCode = 0, const QString &errorDescription = QString()) override;
     void focusContainer() override;
     void unhandledKeyEvent(QKeyEvent *event) override;
-    void adoptNewWindow(QSharedPointer<QtWebEngineCore::WebContentsAdapter> newWebContents, WindowOpenDisposition disposition, bool userGesture, const QRect &, const QUrl &targetUrl) override;
+    QSharedPointer<QtWebEngineCore::WebContentsAdapter>
+    adoptNewWindow(QSharedPointer<QtWebEngineCore::WebContentsAdapter> newWebContents,
+                   WindowOpenDisposition disposition, bool userGesture, const QRect &,
+                   const QUrl &targetUrl) override;
     bool isBeingAdopted() override;
     void close() override;
     void windowCloseRejected() override;
     void requestFullScreenMode(const QUrl &origin, bool fullscreen) override;
     bool isFullScreenMode() const override;
-    void contextMenuRequested(const QtWebEngineCore::WebEngineContextMenuData &) override;
+    void contextMenuRequested(QWebEngineContextMenuRequest *request) override;
     void navigationRequested(int navigationType, const QUrl &url, int &navigationRequestAction, bool isMainFrame) override;
     void javascriptDialog(QSharedPointer<QtWebEngineCore::JavaScriptDialogController>) override;
     void runFileChooser(QSharedPointer<QtWebEngineCore::FilePickerController>) override;
@@ -145,11 +147,11 @@ public:
     void runQuotaRequest(QWebEngineQuotaRequest) override;
     void runRegisterProtocolHandlerRequest(QWebEngineRegisterProtocolHandlerRequest) override;
     QObject *accessibilityParentObject() override;
-    QtWebEngineCore::WebEngineSettings *webEngineSettings() const override;
-    void allowCertificateError(const QSharedPointer<CertificateErrorController> &errorController) override;
-    void selectClientCert(const QSharedPointer<ClientCertSelectController> &selectController) override;
-    void runGeolocationPermissionRequest(QUrl const&) override;
-    void runUserNotificationPermissionRequest(QUrl const&) override;
+    QWebEngineSettings *webEngineSettings() const override;
+    void allowCertificateError(const QWebEngineCertificateError &error) override;
+    void selectClientCert(const QSharedPointer<QtWebEngineCore::ClientCertSelectController>
+                                  &selectController) override;
+    void runFeaturePermissionRequest(QtWebEngineCore::ProfileAdapter::PermissionType permission, const QUrl &securityOrigin) override;
     void renderProcessTerminated(RenderProcessTerminationStatus terminationStatus, int exitCode) override;
     void requestGeometryChange(const QRect &geometry, const QRect &frameGeometry) override;
     void updateScrollPosition(const QPointF &position) override;
@@ -173,6 +175,8 @@ public:
     void widgetChanged(QtWebEngineCore::RenderWidgetHostViewQtDelegate *newWidgetBase) override;
     void findTextFinished(const QWebEngineFindTextResult &result) override;
 
+    void didCompositorFrameSwap();
+
     void updateAction(QQuickWebEngineView::WebAction) const;
     void adoptWebContents(QtWebEngineCore::WebContentsAdapter *webContents);
     void setProfile(QQuickWebEngineProfile *profile);
@@ -184,12 +188,6 @@ public:
     void widgetChanged(QtWebEngineCore::RenderWidgetHostViewQtDelegateQuick *oldWidget,
                        QtWebEngineCore::RenderWidgetHostViewQtDelegateQuick *newWidget);
 
-    // QQmlListPropertyHelpers
-    static void userScripts_append(QQmlListProperty<QQuickWebEngineScript> *p, QQuickWebEngineScript *script);
-    static int userScripts_count(QQmlListProperty<QQuickWebEngineScript> *p);
-    static QQuickWebEngineScript *userScripts_at(QQmlListProperty<QQuickWebEngineScript> *p, int idx);
-    static void userScripts_clear(QQmlListProperty<QQuickWebEngineScript> *p);
-
     QQuickWebEngineProfile *m_profile;
     QSharedPointer<QtWebEngineCore::WebContentsAdapter> adapter;
     QScopedPointer<QQuickWebEngineHistory> m_history;
@@ -198,7 +196,6 @@ public:
     QQuickWebEngineTestSupport *m_testSupport;
 #endif
     QQmlComponent *contextMenuExtraItems;
-    QtWebEngineCore::WebEngineContextMenuData m_contextMenuData;
     QUrl m_url;
     QString m_html;
     QUrl iconUrl;
@@ -210,11 +207,11 @@ public:
     bool m_navigationActionTriggered;
     qreal devicePixelRatio;
     QMap<quint64, QJSValue> m_callbacks;
-    QList<QSharedPointer<CertificateErrorController> > m_certificateErrorControllers;
     QQmlWebChannel *m_webChannel;
     QPointer<QQuickWebEngineView> inspectedView;
     QPointer<QQuickWebEngineView> devToolsView;
     uint m_webChannelWorld;
+    bool m_defaultAudioMuted;
     bool m_isBeingAdopted;
     mutable QQuickWebEngineAction *actions[QQuickWebEngineView::WebActionCount];
     QtWebEngineCore::RenderWidgetHostViewQtDelegateQuick *widget = nullptr;
@@ -222,12 +219,20 @@ public:
     bool profileInitialized() const;
 
 private:
+    enum LoadVisuallyCommittedState {
+        NotCommitted,
+        DidFirstVisuallyNonEmptyPaint,
+        DidFirstCompositorFrameSwap
+    };
+
     QScopedPointer<QtWebEngineCore::UIDelegatesManager> m_uIDelegatesManager;
-    QList<QQuickWebEngineScript *> m_userScripts;
     QColor m_backgroundColor;
     qreal m_zoomFactor;
     bool m_ui2Enabled;
     bool m_profileInitialized;
+    QWebEngineContextMenuRequest *m_contextMenuRequest;
+    LoadVisuallyCommittedState m_loadVisuallyCommittedState = NotCommitted;
+    QScopedPointer<QQuickWebEngineScriptCollection> m_scriptCollection;
 };
 
 #ifndef QT_NO_ACCESSIBILITY
@@ -253,7 +258,8 @@ private:
 class QQuickContextMenuBuilder : public QtWebEngineCore::RenderViewContextMenuQt
 {
 public:
-    QQuickContextMenuBuilder(const QtWebEngineCore::WebEngineContextMenuData &data, QQuickWebEngineView *view, QObject *menu);
+    QQuickContextMenuBuilder(QWebEngineContextMenuRequest *data, QQuickWebEngineView *view,
+                             QObject *menu);
     void appendExtraItems(QQmlEngine *engine);
 
 private:

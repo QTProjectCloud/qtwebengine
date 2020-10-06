@@ -38,9 +38,6 @@
 ****************************************************************************/
 
 #include "qwebengineclientcertificateselection.h"
-
-#if !defined(QT_NO_SSL) || QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-
 #include "client_cert_select_controller.h"
 
 QT_BEGIN_NAMESPACE
@@ -63,8 +60,9 @@ QT_BEGIN_NAMESPACE
 
 /*! \internal
 */
-QWebEngineClientCertificateSelection::QWebEngineClientCertificateSelection(QSharedPointer<ClientCertSelectController> selectController)
-        : d_ptr(selectController)
+QWebEngineClientCertificateSelection::QWebEngineClientCertificateSelection(
+        QSharedPointer<QtWebEngineCore::ClientCertSelectController> selectController)
+    : d_ptr(selectController)
 {}
 
 QWebEngineClientCertificateSelection::QWebEngineClientCertificateSelection(const QWebEngineClientCertificateSelection &other)
@@ -86,7 +84,7 @@ QWebEngineClientCertificateSelection::~QWebEngineClientCertificateSelection()
 
     \sa select()
 */
-QVector<QSslCertificate> QWebEngineClientCertificateSelection::certificates() const
+QList<QSslCertificate> QWebEngineClientCertificateSelection::certificates() const
 {
     return d_ptr->certificates();
 }
@@ -124,4 +122,3 @@ QUrl QWebEngineClientCertificateSelection::host() const
 
 QT_END_NAMESPACE
 
-#endif // !defined(QT_NO_SSL) || QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)

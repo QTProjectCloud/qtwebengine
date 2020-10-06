@@ -42,18 +42,23 @@ QT_BEGIN_NAMESPACE
 QPdfSearchResult::QPdfSearchResult() :
     QPdfSearchResult(new QPdfSearchResultPrivate()) { }
 
-QPdfSearchResult::QPdfSearchResult(int page, QVector<QRectF> rects, QString context) :
-    QPdfSearchResult(new QPdfSearchResultPrivate(page, rects, context)) { }
+QPdfSearchResult::QPdfSearchResult(int page, QList<QRectF> rects, QString contextBefore, QString contextAfter) :
+    QPdfSearchResult(new QPdfSearchResultPrivate(page, rects, contextBefore, contextAfter)) { }
 
 QPdfSearchResult::QPdfSearchResult(QPdfSearchResultPrivate *d) :
     QPdfDestination(static_cast<QPdfDestinationPrivate *>(d)) { }
 
-QString QPdfSearchResult::context() const
+QString QPdfSearchResult::contextBefore() const
 {
-    return static_cast<QPdfSearchResultPrivate *>(d.data())->context;
+    return static_cast<QPdfSearchResultPrivate *>(d.data())->contextBefore;
 }
 
-QVector<QRectF> QPdfSearchResult::rectangles() const
+QString QPdfSearchResult::contextAfter() const
+{
+    return static_cast<QPdfSearchResultPrivate *>(d.data())->contextAfter;
+}
+
+QList<QRectF> QPdfSearchResult::rectangles() const
 {
     return static_cast<QPdfSearchResultPrivate *>(d.data())->rects;
 }
@@ -63,7 +68,8 @@ QDebug operator<<(QDebug dbg, const QPdfSearchResult &searchResult)
     QDebugStateSaver saver(dbg);
     dbg.nospace();
     dbg << "QPdfSearchResult(page=" << searchResult.page()
-        << " context=" << searchResult.context()
+        << " contextBefore=" << searchResult.contextBefore()
+        << " contextAfter=" << searchResult.contextAfter()
         << " rects=" << searchResult.rectangles();
     dbg << ')';
     return dbg;

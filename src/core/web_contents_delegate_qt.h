@@ -52,11 +52,8 @@
 #include "favicon_manager.h"
 #include "find_text_helper.h"
 #include "javascript_dialog_manager_qt.h"
-
-#include <QtCore/qvector.h>
-
-QT_FORWARD_DECLARE_CLASS(CertificateErrorController)
-QT_FORWARD_DECLARE_CLASS(ClientCertSelectController)
+#include <QtCore/qlist.h>
+#include <QWebEngineCertificateError>
 
 namespace content {
     class ColorChooser;
@@ -87,7 +84,7 @@ protected:
 
 private:
     WebContentsAdapterClient *m_viewClient;
-    QVector<content::FrameTreeNode *> m_observedNodes;
+    QList<content::FrameTreeNode *> m_observedNodes;
 };
 
 class SavePageInfo
@@ -122,7 +119,7 @@ public:
     void NavigationStateChanged(content::WebContents* source, content::InvalidateTypes changed_flags) override;
     void AddNewContents(content::WebContents *source, std::unique_ptr<content::WebContents> new_contents, WindowOpenDisposition disposition, const gfx::Rect &initial_pos, bool user_gesture, bool *was_blocked) override;
     void CloseContents(content::WebContents *source) override;
-    void LoadProgressChanged(content::WebContents* source, double progress) override;
+    void LoadProgressChanged(double progress) override;
     bool HandleKeyboardEvent(content::WebContents *source, const content::NativeWebKeyboardEvent &event) override;
     content::ColorChooser* OpenColorChooser(content::WebContents *source, SkColor color, const std::vector<blink::mojom::ColorSuggestionPtr> &suggestions) override;
     void WebContentsCreated(content::WebContents *source_contents, int opener_render_process_id, int opener_render_frame_id,
@@ -148,6 +145,7 @@ public:
     void RegisterProtocolHandler(content::WebContents* web_contents, const std::string& protocol, const GURL& url, bool user_gesture) override;
     void UnregisterProtocolHandler(content::WebContents* web_contents, const std::string& protocol, const GURL& url, bool user_gesture) override;
     bool TakeFocus(content::WebContents *source, bool reverse) override;
+    void ContentsZoomChange(bool zoom_in) override;
 
     // WebContentsObserver overrides
     void RenderFrameCreated(content::RenderFrameHost *render_frame_host) override;
@@ -160,20 +158,20 @@ public:
     void DidStartLoading() override;
     void DidReceiveResponse() override;
     void DidStopLoading() override;
-    void DidFailLoad(content::RenderFrameHost* render_frame_host, const GURL& validated_url, int error_code, const base::string16& error_description) override;
+    void DidFailLoad(content::RenderFrameHost* render_frame_host, const GURL& validated_url, int error_code) override;
     void DidFinishLoad(content::RenderFrameHost *render_frame_host, const GURL &validated_url) override;
     void BeforeUnloadFired(bool proceed, const base::TimeTicks& proceed_time) override;
-    void DidUpdateFaviconURL(const std::vector<content::FaviconURL> &candidates) override;
+    void DidUpdateFaviconURL(const std::vector<blink::mojom::FaviconURLPtr> &candidates) override;
     void OnVisibilityChanged(content::Visibility visibility) override;
     void DidFirstVisuallyNonEmptyPaint() override;
     void ActivateContents(content::WebContents* contents) override;
+    bool ShouldNavigateOnBackForwardMouseButtons() override;
 
     void didFailLoad(const QUrl &url, int errorCode, const QString &errorDescription);
     void overrideWebPreferences(content::WebContents *, content::WebPreferences*);
     void allowCertificateError(const QSharedPointer<CertificateErrorController> &);
     void selectClientCert(const QSharedPointer<ClientCertSelectController> &);
-    void requestGeolocationPermission(const QUrl &requestingOrigin);
-    void requestUserNotificationPermission(const QUrl &requestingOrigin);
+    void requestFeaturePermission(ProfileAdapter::PermissionType feature, const QUrl &requestingOrigin);
     void launchExternalURL(const QUrl &url, ui::PageTransition page_transition, bool is_main_frame, bool has_user_gesture);
     FaviconManager *faviconManager();
     FindTextHelper *findTextHelper();
@@ -201,7 +199,10 @@ public:
     base::WeakPtr<WebContentsDelegateQt> AsWeakPtr() { return m_weakPtrFactory.GetWeakPtr(); }
 
 private:
-    QWeakPointer<WebContentsAdapter> createWindow(std::unique_ptr<content::WebContents> new_contents, WindowOpenDisposition disposition, const gfx::Rect& initial_pos, bool user_gesture);
+    QSharedPointer<WebContentsAdapter>
+    createWindow(std::unique_ptr<content::WebContents> new_contents,
+                 WindowOpenDisposition disposition, const gfx::Rect &initial_pos,
+                 bool user_gesture);
     void EmitLoadStarted(const QUrl &url, bool isErrorPage = false);
     void EmitLoadFinished(bool success, const QUrl &url, bool isErrorPage = false, int errorCode = 0, const QString &errorDescription = QString());
     void EmitLoadCommitted();
@@ -212,7 +213,7 @@ private:
     int &streamCount(blink::mojom::MediaStreamType type);
 
     WebContentsAdapterClient *m_viewClient;
-    QVector<int64_t> m_loadingErrorFrameList;
+    QList<int64_t> m_loadingErrorFrameList;
     QScopedPointer<FaviconManager> m_faviconManager;
     QScopedPointer<FindTextHelper> m_findTextHelper;
     SavePageInfo m_savePageInfo;
@@ -231,6 +232,7 @@ private:
     mutable bool m_pendingUrlUpdate = false;
 
     base::WeakPtrFactory<WebContentsDelegateQt> m_weakPtrFactory { this };
+    QList<QWeakPointer<CertificateErrorController>> m_certificateErrorControllers;
 };
 
 } // namespace QtWebEngineCore

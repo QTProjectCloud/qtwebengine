@@ -173,6 +173,10 @@ WebContentsAdapterClient::MediaRequestFlags mediaRequestFlagsForRequest(const co
         request.video_type == MediaStreamType::GUM_DESKTOP_VIDEO_CAPTURE)
         return {WebContentsAdapterClient::MediaDesktopAudioCapture, WebContentsAdapterClient::MediaDesktopVideoCapture};
 
+    if (request.audio_type == MediaStreamType::DISPLAY_AUDIO_CAPTURE &&
+        request.video_type == MediaStreamType::DISPLAY_VIDEO_CAPTURE)
+        return {WebContentsAdapterClient::MediaDesktopAudioCapture, WebContentsAdapterClient::MediaDesktopVideoCapture};
+
     if (request.video_type == MediaStreamType::GUM_DESKTOP_VIDEO_CAPTURE ||
         request.video_type == MediaStreamType::DISPLAY_VIDEO_CAPTURE)
         return {WebContentsAdapterClient::MediaDesktopVideoCapture};
@@ -333,8 +337,8 @@ void MediaCaptureDevicesDispatcher::processMediaAccessRequest(WebContentsAdapter
     }
 
     if (flags.testFlag(WebContentsAdapterClient::MediaDesktopVideoCapture)) {
-        const bool screenCaptureEnabled =
-                adapterClient->webEngineSettings()->testAttribute(WebEngineSettings::ScreenCaptureEnabled);
+        const bool screenCaptureEnabled = adapterClient->webEngineSettings()->testAttribute(
+                QWebEngineSettings::ScreenCaptureEnabled);
         const bool originIsSecure = content::IsOriginSecure(request.security_origin);
         if (!screenCaptureEnabled || !originIsSecure) {
             std::move(callback).Run(blink::MediaStreamDevices(), MediaStreamRequestResult::INVALID_STATE, std::unique_ptr<content::MediaStreamUI>());

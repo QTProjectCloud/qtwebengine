@@ -42,15 +42,15 @@
 
 #include <QtWebEngineWidgets/qtwebenginewidgetsglobal.h>
 #include <QtNetwork/qtnetwork-config.h>
-
-#if !defined(QT_NO_SSL) || QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-
+#include <QtCore/qlist.h>
 #include <QtCore/qscopedpointer.h>
-#include <QtCore/qvector.h>
 #include <QtNetwork/qsslcertificate.h>
 
-QT_BEGIN_NAMESPACE
+namespace QtWebEngineCore {
 class ClientCertSelectController;
+}
+
+QT_BEGIN_NAMESPACE
 
 class QWEBENGINEWIDGETS_EXPORT QWebEngineClientCertificateSelection {
 public:
@@ -63,18 +63,17 @@ public:
 
     void select(const QSslCertificate &certificate);
     void selectNone();
-    QVector<QSslCertificate> certificates() const;
+    QList<QSslCertificate> certificates() const;
 
 private:
     friend class QWebEnginePagePrivate;
 
-    QWebEngineClientCertificateSelection(QSharedPointer<ClientCertSelectController>);
+    QWebEngineClientCertificateSelection(
+            QSharedPointer<QtWebEngineCore::ClientCertSelectController>);
 
-    QSharedPointer<ClientCertSelectController> d_ptr;
+    QSharedPointer<QtWebEngineCore::ClientCertSelectController> d_ptr;
 };
 
 QT_END_NAMESPACE
-
-#endif // !defined(QT_NO_SSL) || QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
 
 #endif // QWEBENGINECLIENTCERTSELECTION_H

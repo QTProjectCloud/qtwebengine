@@ -45,6 +45,8 @@
 
 #include "api/qtwebenginecoreglobal_p.h"
 
+QT_FORWARD_DECLARE_CLASS(QWebEngineContextMenuRequest)
+
 namespace content {
 class WebContents;
 }
@@ -59,26 +61,19 @@ class WebContentsViewQt
 public:
     static inline WebContentsViewQt *from(WebContentsView *view) { return static_cast<WebContentsViewQt*>(view); }
 
-    WebContentsViewQt(content::WebContents* webContents)
-        : m_webContents(webContents)
-        , m_client(nullptr)
-        , m_factoryClient(nullptr)
-    { }
-
+    WebContentsViewQt(content::WebContents* webContents);
     void setFactoryClient(WebContentsAdapterClient* client);
     void setClient(WebContentsAdapterClient* client);
     WebContentsAdapterClient *client() { return m_client; }
 
     // content::WebContentsView overrides:
-    content::RenderWidgetHostViewBase *CreateViewForWidget(content::RenderWidgetHost* render_widget_host, bool is_guest_view_hack) override;
+    content::RenderWidgetHostViewBase *CreateViewForWidget(content::RenderWidgetHost *render_widget_host) override;
 
     void CreateView(gfx::NativeView context) override;
 
     content::RenderWidgetHostViewBase *CreateViewForChildWidget(content::RenderWidgetHost* render_widget_host) override;
 
     void SetPageTitle(const base::string16& title) override { }
-
-    void RenderViewCreated(content::RenderViewHost* host) override { }
 
     void RenderViewReady() override { }
 
@@ -129,9 +124,14 @@ public:
     void TakeFocus(bool reverse) override;
 
 private:
+    static void update(QWebEngineContextMenuRequest *request,
+                       const content::ContextMenuParams &params, bool spellcheckEnabled);
+
+private:
     content::WebContents *m_webContents;
     WebContentsAdapterClient *m_client;
     WebContentsAdapterClient *m_factoryClient;
+    std::unique_ptr<QWebEngineContextMenuRequest> m_contextMenuRequest;
 };
 
 } // namespace QtWebEngineCore

@@ -1,6 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2017 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Tobias König <tobias.koenig@kdab.com>
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the QtPDF module of the Qt Toolkit.
@@ -38,13 +39,14 @@
 #define QPDFPAGERENDERER_H
 
 #include <QtPdf/qtpdfglobal.h>
-#include <QObject>
-#include <QtPdf/QPdfDocumentRenderOptions>
-#include <QSize>
+
+#include <QtCore/qobject.h>
+#include <QtCore/qsize.h>
+#include <QtPdf/qpdfdocument.h>
+#include <QtPdf/qpdfdocumentrenderoptions.h>
 
 QT_BEGIN_NAMESPACE
 
-class QPdfDocument;
 class QPdfPageRendererPrivate;
 
 class Q_PDF_EXPORT QPdfPageRenderer : public QObject
@@ -55,15 +57,15 @@ class Q_PDF_EXPORT QPdfPageRenderer : public QObject
     Q_PROPERTY(RenderMode renderMode READ renderMode WRITE setRenderMode NOTIFY renderModeChanged)
 
 public:
-    enum RenderMode
+    enum class RenderMode
     {
-        MultiThreadedRenderMode,
-        SingleThreadedRenderMode
+        MultiThreaded,
+        SingleThreaded
     };
     Q_ENUM(RenderMode)
 
     explicit QPdfPageRenderer(QObject *parent = nullptr);
-    ~QPdfPageRenderer();
+    ~QPdfPageRenderer() override;
 
     RenderMode renderMode() const;
     void setRenderMode(RenderMode mode);
@@ -82,7 +84,7 @@ Q_SIGNALS:
                       QPdfDocumentRenderOptions options, quint64 requestId);
 
 private:
-    Q_DECLARE_PRIVATE(QPdfPageRenderer)
+    QScopedPointer<QPdfPageRendererPrivate> d_ptr;
 };
 
 QT_END_NAMESPACE

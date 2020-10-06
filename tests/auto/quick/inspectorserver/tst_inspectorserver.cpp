@@ -105,8 +105,15 @@ inline QQuickWebEngineView* tst_InspectorServer::webView() const
 QJsonArray tst_InspectorServer::fetchPageList() const
 {
     QNetworkAccessManager qnam;
-    QScopedPointer<QNetworkReply> reply(qnam.get(QNetworkRequest(s_inspectorServerHttpBaseUrl.resolved(QUrl("json/list")))));
-    QSignalSpy(reply.data(), SIGNAL(finished())).wait();
+    QSignalSpy spy(&qnam, &QNetworkAccessManager::finished);;
+    QNetworkRequest request(s_inspectorServerHttpBaseUrl.resolved(QUrl("json/list")));
+    QScopedPointer<QNetworkReply> reply(qnam.get(request));
+    spy.wait();
+    // Work-around a network bug in Qt6:
+    if (reply->error() == QNetworkReply::ContentNotFoundError) {
+        reply.reset(qnam.get(request));
+        spy.wait();
+    }
     return QJsonDocument::fromJson(reply->readAll()).array();
 }
 
@@ -125,6 +132,11 @@ void tst_InspectorServer::testPageList()
 
 void tst_InspectorServer::testRemoteDebuggingMessage()
 {
+    const QUrl testPageUrl = QUrl::fromLocalFile(QLatin1String(TESTS_SOURCE_DIR "/html/basic_page.html"));
+    QSignalSpy loadSpy(webView(), SIGNAL(loadingChanged(QQuickWebEngineLoadRequest*)));
+    webView()->setUrl(testPageUrl);
+    QTRY_VERIFY(loadSpy.size() && !webView()->isLoading());
+
     QJsonArray pageList = fetchPageList();
     QCOMPARE(pageList.size(), 1);
     QVERIFY(pageList.at(0).toObject().contains("webSocketDebuggerUrl"));
@@ -154,6 +166,11 @@ void tst_InspectorServer::testRemoteDebuggingMessage()
 
 void tst_InspectorServer::openRemoteDebuggingSession()
 {
+    const QUrl testPageUrl = QUrl::fromLocalFile(QLatin1String(TESTS_SOURCE_DIR "/html/basic_page.html"));
+    QSignalSpy loadSpy(webView(), SIGNAL(loadingChanged(QQuickWebEngineLoadRequest*)));
+    webView()->setUrl(testPageUrl);
+    QTRY_VERIFY(loadSpy.size() && !webView()->isLoading());
+
     QJsonArray pageList = fetchPageList();
     QCOMPARE(pageList.size(), 1);
     QVERIFY(pageList.at(0).toObject().contains("devtoolsFrontendUrl"));

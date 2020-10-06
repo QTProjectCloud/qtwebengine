@@ -61,6 +61,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "components/certificate_transparency/ct_known_logs.h"
 #include "components/network_session_configurator/common/network_features.h"
+#include "components/network_session_configurator/common/network_switches.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cors_exempt_headers.h"
@@ -74,7 +75,7 @@
 #include "net/net_buildflags.h"
 #include "net/third_party/uri_template/uri_template.h"
 #include "services/network/network_service.h"
-#include "services/network/public/cpp/cross_thread_shared_url_loader_factory_info.h"
+#include "services/network/public/cpp/cross_thread_pending_shared_url_loader_factory.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/host_resolver.mojom.h"
@@ -122,19 +123,23 @@ public:
 
     // mojom::URLLoaderFactory implementation:
 
-    void CreateLoaderAndStart(network::mojom::URLLoaderRequest request, int32_t routing_id, int32_t request_id,
-                              uint32_t options, const network::ResourceRequest &url_request,
-                              network::mojom::URLLoaderClientPtr client,
+    void CreateLoaderAndStart(mojo::PendingReceiver<network::mojom::URLLoader> receiver,
+                              int32_t routing_id,
+                              int32_t request_id,
+                              uint32_t options,
+                              const network::ResourceRequest &url_request,
+                              mojo::PendingRemote<network::mojom::URLLoaderClient> client,
                               const net::MutableNetworkTrafficAnnotationTag &traffic_annotation) override
     {
         DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
         if (!manager_)
             return;
-        manager_->GetURLLoaderFactory()->CreateLoaderAndStart(std::move(request), routing_id, request_id, options,
-                                                              url_request, std::move(client), traffic_annotation);
+        manager_->GetURLLoaderFactory()->CreateLoaderAndStart(
+                    std::move(receiver), routing_id, request_id, options, url_request,
+                    std::move(client), traffic_annotation);
     }
 
-    void Clone(mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver)
+    void Clone(mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver) override
     {
         if (!manager_)
             return;
@@ -142,10 +147,10 @@ public:
     }
 
     // SharedURLLoaderFactory implementation:
-    std::unique_ptr<network::SharedURLLoaderFactoryInfo> Clone() override
+    std::unique_ptr<network::PendingSharedURLLoaderFactory> Clone() override
     {
         DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-        return std::make_unique<network::CrossThreadSharedURLLoaderFactoryInfo>(this);
+        return std::make_unique<network::CrossThreadPendingSharedURLLoaderFactory>(this);
     }
 
     void Shutdown() { manager_ = nullptr; }
@@ -162,13 +167,8 @@ private:
 
 network::mojom::NetworkContext *SystemNetworkContextManager::GetContext()
 {
-    if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-        // SetUp should already have been called.
-        DCHECK(io_thread_network_context_);
-        return io_thread_network_context_.get();
-    }
-
-    if (!network_service_network_context_ || network_service_network_context_.encountered_error()) {
+    if (!network_service_network_context_ ||
+        !network_service_network_context_.is_connected()) {
         // This should call into OnNetworkServiceCreated(), which will re-create
         // the network service, if needed. There's a chance that it won't be
         // invoked, if the NetworkContext has encountered an error but the
@@ -184,37 +184,20 @@ network::mojom::NetworkContext *SystemNetworkContextManager::GetContext()
 network::mojom::URLLoaderFactory *SystemNetworkContextManager::GetURLLoaderFactory()
 {
     // Create the URLLoaderFactory as needed.
-    if (url_loader_factory_ && !url_loader_factory_.encountered_error()) {
+    if (url_loader_factory_ && url_loader_factory_.is_connected()) {
         return url_loader_factory_.get();
     }
 
     network::mojom::URLLoaderFactoryParamsPtr params = network::mojom::URLLoaderFactoryParams::New();
     params->process_id = network::mojom::kBrowserProcessId;
     params->is_corb_enabled = false;
-    GetContext()->CreateURLLoaderFactory(mojo::MakeRequest(&url_loader_factory_), std::move(params));
+    GetContext()->CreateURLLoaderFactory(url_loader_factory_.BindNewPipeAndPassReceiver(), std::move(params));
     return url_loader_factory_.get();
 }
 
 scoped_refptr<network::SharedURLLoaderFactory> SystemNetworkContextManager::GetSharedURLLoaderFactory()
 {
     return shared_url_loader_factory_;
-}
-
-void SystemNetworkContextManager::SetUp(
-        network::mojom::NetworkContextRequest *network_context_request,
-        network::mojom::NetworkContextParamsPtr *network_context_params, bool *stub_resolver_enabled,
-        base::Optional<std::vector<network::mojom::DnsOverHttpsServerPtr>> *dns_over_https_servers,
-        network::mojom::HttpAuthStaticParamsPtr *http_auth_static_params,
-        network::mojom::HttpAuthDynamicParamsPtr *http_auth_dynamic_params, bool *is_quic_allowed)
-{
-    if (!base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-        *network_context_request = mojo::MakeRequest(&io_thread_network_context_);
-        *network_context_params = CreateNetworkContextParams();
-    }
-    *is_quic_allowed = false;
-    *http_auth_static_params = CreateHttpAuthStaticParams();
-    *http_auth_dynamic_params = CreateHttpAuthDynamicParams();
-    //    GetStubResolverConfig(local_state_, stub_resolver_enabled, dns_over_https_servers);
 }
 
 // static
@@ -250,17 +233,20 @@ SystemNetworkContextManager::~SystemNetworkContextManager()
 
 void SystemNetworkContextManager::OnNetworkServiceCreated(network::mojom::NetworkService *network_service)
 {
-    if (!base::FeatureList::IsEnabled(network::features::kNetworkService))
-        return;
+    bool is_quic_force_enabled = base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableQuic);
     // Disable QUIC globally
-    network_service->DisableQuic();
+    if (!is_quic_force_enabled)
+        network_service->DisableQuic();
 
     network_service->SetUpHttpAuth(CreateHttpAuthStaticParams());
     network_service->ConfigureHttpAuthPrefs(CreateHttpAuthDynamicParams());
 
     // The system NetworkContext must be created first, since it sets
     // |primary_network_context| to true.
-    network_service->CreateNetworkContext(MakeRequest(&network_service_network_context_), CreateNetworkContextParams());
+    network_service_network_context_.reset();
+    network_service->CreateNetworkContext(
+        network_service_network_context_.BindNewPipeAndPassReceiver(),
+        CreateNetworkContextParams());
 
     // Configure the stub resolver. This must be done after the system
     // NetworkContext is created, but before anything has the chance to use it.

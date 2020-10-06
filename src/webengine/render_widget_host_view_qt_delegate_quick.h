@@ -40,6 +40,7 @@
 #ifndef RENDER_WIDGET_HOST_VIEW_QT_DELEGATE_QUICK_H
 #define RENDER_WIDGET_HOST_VIEW_QT_DELEGATE_QUICK_H
 
+#include "compositor/compositor.h"
 #include "render_widget_host_view_qt_delegate.h"
 
 #include <QAccessibleObject>
@@ -53,7 +54,11 @@ QT_END_NAMESPACE
 
 namespace QtWebEngineCore {
 
-class RenderWidgetHostViewQtDelegateQuick : public QQuickItem, public RenderWidgetHostViewQtDelegate
+class RenderWidgetHostViewQtDelegateClient;
+
+class RenderWidgetHostViewQtDelegateQuick : public QQuickItem,
+                                            public RenderWidgetHostViewQtDelegate,
+                                            public Compositor::Observer
 {
     Q_OBJECT
 public:
@@ -71,11 +76,6 @@ public:
     void hide() override;
     bool isVisible() const override;
     QWindow* window() const override;
-    QSGTexture *createTextureFromImage(const QImage &) override;
-    QSGLayer *createLayer() override;
-    QSGImageNode *createImageNode() override;
-    QSGRectangleNode *createRectangleNode() override;
-    void update() override;
     void updateCursor(const QCursor &) override;
     void resize(int width, int height) override;
     void move(const QPoint&) override { }
@@ -83,7 +83,8 @@ public:
     void setInputMethodHints(Qt::InputMethodHints) override { }
     // The QtQuick view doesn't have a backbuffer of its own and doesn't need this
     void setClearColor(const QColor &) override { }
-    bool copySurface(const QRect &rect, const QSize &size, QImage &image) override;
+
+    void readyToSwap() override;
 
 protected:
     bool event(QEvent *event) override;
@@ -100,11 +101,12 @@ protected:
     void hoverLeaveEvent(QHoverEvent *event) override;
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
     void inputMethodEvent(QInputMethodEvent *event) override;
-    void geometryChanged(const QRectF &newGeometry, const QRectF &oldGeometry) override;
+    void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
     void itemChange(ItemChange change, const ItemChangeData &value) override;
     QSGNode *updatePaintNode(QSGNode *, UpdatePaintNodeData *) override;
 
 private slots:
+    void onBeforeRendering();
     void onWindowPosChanged();
     void onHide();
 

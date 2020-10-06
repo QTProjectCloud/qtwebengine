@@ -52,19 +52,22 @@
 //
 
 #include <QtWebEngine/private/qtwebengineglobal_p.h>
-#include <QObject>
+#include <QtWebEngineCore/qwebenginescript.h>
+#include <QtCore/qobject.h>
 
 QT_BEGIN_NAMESPACE
-class QQuickWebEngineProfile;
+
 class QQuickWebEngineSettings;
+class QQuickWebEngineProfile;
+
 class Q_WEBENGINE_PRIVATE_EXPORT QQuickWebEngineSingleton : public QObject {
     Q_OBJECT
     Q_PROPERTY(QQuickWebEngineSettings* settings READ settings CONSTANT FINAL)
     Q_PROPERTY(QQuickWebEngineProfile* defaultProfile READ defaultProfile CONSTANT FINAL REVISION 1)
-
 public:
     QQuickWebEngineSettings *settings() const;
     QQuickWebEngineProfile *defaultProfile() const;
+    Q_INVOKABLE QWebEngineScript script() const;
 };
 
 QT_END_NAMESPACE

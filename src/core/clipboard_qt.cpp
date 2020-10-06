@@ -46,6 +46,7 @@
 #include "type_conversion.h"
 
 #include "base/logging.h"
+#include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/clipboard/clipboard.h"
@@ -143,7 +144,14 @@ void ClipboardQt::WriteText(const char *text_data, size_t text_len)
 
 void ClipboardQt::WriteHTML(const char *markup_data, size_t markup_len, const char *url_data, size_t url_len)
 {
-    getUncommittedData()->setHtml(QString::fromUtf8(markup_data, markup_len));
+    QString markup_string = QString::fromUtf8(markup_data, markup_len);
+#if defined (Q_OS_MACOS)
+    // We need to prepend the charset on macOS to prevent garbled Unicode characters
+    // when pasting to certain applications (e.g. Notes, TextEdit)
+    // Mirrors the behavior in ui/base/clipboard/clipboard_mac.mm in Chromium.
+    markup_string.prepend(QLatin1String("<meta charset='utf-8'>"));
+#endif
+    getUncommittedData()->setHtml(markup_string);
 }
 
 void ClipboardQt::WriteRTF(const char *rtf_data, size_t data_len)
@@ -177,14 +185,14 @@ void ClipboardQt::WriteBookmark(const char *title_data, size_t title_len, const 
 
 void ClipboardQt::WriteData(const ui::ClipboardFormatType &format, const char *data_data, size_t data_len)
 {
-    getUncommittedData()->setData(QString::fromStdString(format.ToString()), QByteArray(data_data, data_len));
+    getUncommittedData()->setData(QString::fromStdString(format.GetName()), QByteArray(data_data, data_len));
 }
 
 bool ClipboardQt::IsFormatAvailable(const ui::ClipboardFormatType &format, ui::ClipboardBuffer type) const
 {
     const QMimeData *mimeData = QGuiApplication::clipboard()->mimeData(
             type == ui::ClipboardBuffer::kCopyPaste ? QClipboard::Clipboard : QClipboard::Selection);
-    return mimeData && mimeData->hasFormat(QString::fromStdString(format.ToString()));
+    return mimeData && mimeData->hasFormat(QString::fromStdString(format.GetName()));
 }
 
 void ClipboardQt::Clear(ui::ClipboardBuffer type)
@@ -260,12 +268,12 @@ void ClipboardQt::ReadRTF(ui::ClipboardBuffer type, std::string *result) const
     *result = std::string(byteArray.constData(), byteArray.length());
 }
 
-SkBitmap ClipboardQt::ReadImage(ui::ClipboardBuffer type) const
+void ClipboardQt::ReadImage(ui::ClipboardBuffer type, ReadImageCallback callback) const
 {
     const QMimeData *mimeData = QGuiApplication::clipboard()->mimeData(
             type == ui::ClipboardBuffer::kCopyPaste ? QClipboard::Clipboard : QClipboard::Selection);
     if (!mimeData)
-        return SkBitmap();
+        return std::move(callback).Run(SkBitmap());
     QImage image = qvariant_cast<QImage>(mimeData->imageData());
 
     image = image.convertToFormat(QImage::Format_ARGB32);
@@ -283,7 +291,7 @@ SkBitmap ClipboardQt::ReadImage(ui::ClipboardBuffer type) const
         src += bytesPerLineSrc;
     }
 
-    return bitmap;
+    return std::move(callback).Run(bitmap);
 }
 
 void ClipboardQt::ReadCustomData(ui::ClipboardBuffer clipboard_type, const base::string16 &type, base::string16 *result) const
@@ -306,7 +314,7 @@ void ClipboardQt::ReadData(const ui::ClipboardFormatType &format, std::string *r
     const QMimeData *mimeData = QGuiApplication::clipboard()->mimeData();
     if (!mimeData)
         return;
-    const QByteArray byteArray = mimeData->data(QString::fromStdString(format.ToString()));
+    const QByteArray byteArray = mimeData->data(QString::fromStdString(format.GetName()));
     *result = std::string(byteArray.constData(), byteArray.length());
 }
 
@@ -314,6 +322,22 @@ uint64_t ClipboardQt::GetSequenceNumber(ui::ClipboardBuffer type) const
 {
     return clipboardChangeObserver()->getSequenceNumber(type == ui::ClipboardBuffer::kCopyPaste ? QClipboard::Clipboard
                                                                                                 : QClipboard::Selection);
+}
+
+std::vector<base::string16> ClipboardQt::ReadAvailablePlatformSpecificFormatNames(ui::ClipboardBuffer buffer) const
+{
+    // based on ClipboardAura
+    std::vector<base::string16> types;
+    if (IsFormatAvailable(ui::ClipboardFormatType::GetPlainTextType(), buffer))
+        types.push_back(base::UTF8ToUTF16(ui::ClipboardFormatType::GetPlainTextType().GetName()));
+    if (IsFormatAvailable(ui::ClipboardFormatType::GetHtmlType(), buffer))
+        types.push_back(base::UTF8ToUTF16(ui::ClipboardFormatType::GetHtmlType().GetName()));
+    if (IsFormatAvailable(ui::ClipboardFormatType::GetRtfType(), buffer))
+        types.push_back(base::UTF8ToUTF16(ui::ClipboardFormatType::GetRtfType().GetName()));
+    if (IsFormatAvailable(ui::ClipboardFormatType::GetBitmapType(), buffer))
+        types.push_back(base::UTF8ToUTF16(ui::kMimeTypePNG));
+
+    return types;
 }
 
 } // namespace QtWebEngineCore

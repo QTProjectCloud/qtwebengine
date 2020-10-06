@@ -29,12 +29,14 @@
 import QtQuick 2.0
 import QtTest 1.0
 import QtWebEngine 1.2
+import "../../qmltests/data" 1.0
 import "../mock-delegates/TestParams" 1.0
 
 TestWebEngineView {
     id: webEngineView
     width: 400
     height: 300
+    property var titleChanges: []
 
     function driveLetter() {
         if (Qt.platform.os !== "windows")
@@ -53,6 +55,8 @@ TestWebEngineView {
         signalName: "renderProcessTerminated"
     }
 
+    onTitleChanged: { titleChanges.push(webEngineView.title) }
+
     TestCase {
         name: "WebEngineViewSingleFileUpload"
         when: windowShown
@@ -64,11 +68,12 @@ TestWebEngineView {
             FilePickerParams.nameFilters = []
             titleSpy.clear()
             terminationSpy.clear()
+            titleChanges = []
         }
 
         function cleanup() {
             // Test that the render process doesn't crash, and make sure if it does it does so now.
-            wait(1000)
+            wait(100)
             verify(terminationSpy.count == 0, "Render process didn't self terminate")
 
             // FIXME: Almost every second url loading progress does get stuck at about 90 percent, so the loadFinished signal won't arrive.
@@ -79,14 +84,14 @@ TestWebEngineView {
 
         function test_acceptSingleFileSelection_data() {
             return [
+                   { tag: "test.txt", input: "test.txt", expected: "Failed to Upload" },
                    { tag: driveLetter() + "/test.txt", input: driveLetter() + "/test.txt", expected: "test.txt" },
-                   { tag: driveLetter() + "test.txt", input: driveLetter() + "test.txt", expected: "Failed to Upload" },
                    { tag: driveLetter() + "/tést.txt", input: driveLetter() + "/tést.txt", expected: "tést.txt" },
                    { tag: driveLetter() + "/t%65st.txt", input: driveLetter() + "/t%65st.txt", expected: "t%65st.txt" },
                    { tag: "file:///" + driveLetter() + "test.txt", input: "file:///" + driveLetter() + "test.txt", expected: "test.txt" },
                    { tag: "file:///" + driveLetter() + "tést.txt", input: "file:///" + driveLetter() + "tést.txt", expected: "tést.txt" },
-                   { tag: "file:///" + driveLetter() + "t%65st.txt", input: "file:///" + driveLetter() + "t%65st.txt", expected: "test.txt" },
-                   { tag: "file://" + driveLetter() + "test.txt", input: "file://" + driveLetter() + "test.txt", expected: "test.txt" },
+                   { tag: "file:///" + driveLetter() + "t%65st.txt", input: "file:///" + driveLetter() + "t%65st.txt", expected: "t%65st.txt" },
+                   { tag: "file://" + driveLetter() + "test.txt", input: "file://" + driveLetter() + "test.txt", expected: "Failed to Upload" },
                    { tag: "file:/" + driveLetter() + "test.txt", input: "file:/" + driveLetter() + "test.txt", expected: "test.txt"},
                    { tag: "file:test//test.txt", input: "file:test//test.txt", expected: "Failed to Upload" },
                    { tag: "http://test.txt", input: "http://test.txt", expected: "Failed to Upload" },
@@ -106,7 +111,10 @@ TestWebEngineView {
 
             keyClick(Qt.Key_Enter); // Focus is on the button. Open FileDialog.
             tryCompare(FilePickerParams, "filePickerOpened", true);
-            tryCompare(webEngineView, "title", row.expected);
+            webEngineView.url = Qt.resolvedUrl("about:blank");
+            verify(webEngineView.waitForLoadSucceeded());
+            tryCompare(webEngineView, "title", "about:blank");
+            compare(titleChanges[titleChanges.length-2], row.expected);
 
 
             // Custom dialog
@@ -124,7 +132,10 @@ TestWebEngineView {
 
             keyClick(Qt.Key_Enter); // Focus is on the button. Open FileDialog.
             tryVerify(function() { return finished; });
-            tryCompare(webEngineView, "title", row.expected);
+            webEngineView.url = Qt.resolvedUrl("about:blank");
+            verify(webEngineView.waitForLoadSucceeded());
+            tryCompare(webEngineView, "title", "about:blank");
+            compare(titleChanges[titleChanges.length-2], row.expected);
             webEngineView.fileDialogRequested.disconnect(acceptedFileHandler);
         }
 
@@ -211,19 +222,19 @@ TestWebEngineView {
                    { tag: "C:/test.txt", input: "C:/test.txt", expected: "test.txt"},
                    { tag: "C:\\test.txt", input: "C:\\test.txt", expected: "test.txt"},
                    { tag: "C:\\Documents and Settings\\test\\test.txt", input: "C:\\Documents and Settings\\test\\test.txt", expected: "test.txt"},
-                   { tag: "\\\\applib\\products\\a%2Db\\ abc%5F9\\t.est\\test.txt", input: "file://applib/products/a%2Db/ abc%5F9/4148.920a/media/test.txt", expected: "test.txt"},
-                   { tag: "file://applib/products/a%2Db/ abc%5F9/t.est/test.txt", input: "file://applib/products/a%2Db/ abc%5F9/4148.920a/media/test.txt", expected: "test.txt"},
+                   { tag: "\\\\applib\\products\\a%2Db\\ abc%5F9\\t.est\\test.txt", input: "\\\\applib\\products\\a%2Db\\ abc%5F9\\t.est\\test.txt", expected: "test.txt"},
+                   { tag: "file://applib/products/a%2Db/ abc%5F9/4148.920a/media/test.txt", input: "file://applib/products/a%2Db/ abc%5F9/4148.920a/media/test.txt", expected: "test.txt"},
                    { tag: "file://applib/products/a-b/abc_1/t.est/test.txt", input: "file://applib/products/a-b/abc_1/t.est/test.txt", expected: "test.txt"},
                    { tag: "file:\\\\applib\\products\\a-b\\abc_1\\t:est\\test.txt", input: "file:\\\\applib\\products\\a-b\\abc_1\\t:est\\test.txt", expected: "test.txt"},
-                   { tag: "file:C:/test.txt", input: "file:C:/test.txt", expected: "Failed to Upload"},
-                   { tag: "file:/C:/test.txt", input: "file:/C:/test.txt", expected: "Failed to Upload"},
+                   { tag: "file:C:/test.txt", input: "file:C:/test.txt", expected: "test.tx"},
+                   { tag: "file:/C:/test.txt", input: "file:/C:/test.txt", expected: "test.tx"},
                    { tag: "file://C:/test.txt", input: "file://C:/test.txt", expected: "Failed to Upload"},
                    { tag: "file:///C:test.txt", input: "file:///C:test.txt", expected: "Failed to Upload"},
                    { tag: "file:///C:/test.txt", input: "file:///C:/test.txt", expected: "test.txt"},
                    { tag: "file:///C:\\test.txt", input: "file:///C:\\test.txt", expected: "test.txt"},
                    { tag: "file:\\//C:/test.txt", input: "file:\\//C:/test.txt", expected: "test.txt"},
                    { tag: "file:\\\\/C:\\test.txt", input: "file:\\\\/C:\\test.txt", expected: "test.txt"},
-                   { tag: "\\\\?\\C:/test.txt", input: "\\\\?\\C:/test.txt", expected: "Failed to Upload"},
+                   { tag: "\\\\?\\C:/test.txt", input: "\\\\?\\C:/test.txt", expected: "test.tx"},
             ];
         }
 
@@ -240,7 +251,10 @@ TestWebEngineView {
 
             keyClick(Qt.Key_Enter); // Focus is on the button. Open FileDialog.
             tryCompare(FilePickerParams, "filePickerOpened", true);
-            tryCompare(webEngineView, "title", row.expected);
+            webEngineView.url = Qt.resolvedUrl("about:blank");
+            verify(webEngineView.waitForLoadSucceeded());
+            tryCompare(webEngineView, "title", "about:blank");
+            compare(titleChanges[titleChanges.length-2], row.expected);
 
 
             // Custom dialog
@@ -258,7 +272,10 @@ TestWebEngineView {
 
             keyClick(Qt.Key_Enter); // Focus is on the button. Open FileDialog.
             tryVerify(function() { return finished; });
-            tryCompare(webEngineView, "title", row.expected);
+            webEngineView.url = Qt.resolvedUrl("about:blank");
+            verify(webEngineView.waitForLoadSucceeded());
+            tryCompare(webEngineView, "title", "about:blank");
+            compare(titleChanges[titleChanges.length-2], row.expected);
             webEngineView.fileDialogRequested.disconnect(acceptedFileHandler);
         }
 

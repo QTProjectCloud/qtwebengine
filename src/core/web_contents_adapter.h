@@ -52,6 +52,7 @@
 #define WEB_CONTENTS_ADAPTER_H
 
 #include "qtwebenginecoreglobal_p.h"
+#include "qwebenginecontextmenurequest_p.h"
 #include "web_contents_adapter_client.h"
 #include <memory>
 #include <QtGui/qtgui-config.h>
@@ -61,6 +62,7 @@
 #include <QSharedPointer>
 #include <QString>
 #include <QUrl>
+#include <QPointer>
 
 namespace content {
 class WebContents;
@@ -79,6 +81,7 @@ class QPageLayout;
 class QString;
 class QTemporaryDir;
 class QWebChannel;
+class QWebEngineUrlRequestInterceptor;
 QT_END_NAMESPACE
 
 namespace QtWebEngineCore {
@@ -192,9 +195,9 @@ public:
     void devToolsFrontendDestroyed(DevToolsFrontendQt *frontend);
 
     void grantMediaAccessPermission(const QUrl &securityOrigin, WebContentsAdapterClient::MediaRequestFlags flags);
-    void runGeolocationRequestCallback(const QUrl &securityOrigin, bool allowed);
-    void grantMouseLockPermission(bool granted);
-    void runUserNotificationRequestCallback(const QUrl &securityOrigin, bool allowed);
+    void grantMouseLockPermission(const QUrl &securityOrigin, bool granted);
+    void handlePendingMouseLockPermission();
+    void grantFeaturePermission(const QUrl &securityOrigin, ProfileAdapter::PermissionType feature, ProfileAdapter::PermissionState allowed);
 
     void setBackgroundColor(const QColor &color);
     QAccessibleInterface *browserAccessible();
@@ -236,6 +239,8 @@ public:
     void initialize(content::SiteInstance *site);
     content::WebContents *webContents() const;
     void updateRecommendedState();
+    void setRequestInterceptor(QWebEngineUrlRequestInterceptor *interceptor);
+    QWebEngineUrlRequestInterceptor* requestInterceptor() const;
 
 private:
     Q_DISABLE_COPY(WebContentsAdapter)
@@ -265,6 +270,7 @@ private:
 #endif
     WebContentsAdapterClient *m_adapterClient;
     quint64 m_nextRequestId;
+    QMap<QUrl, bool> m_pendingMouseLockPermissions;
     std::unique_ptr<content::DropData> m_currentDropData;
     uint m_currentDropAction;
     bool m_updateDragActionCalled;
@@ -275,6 +281,7 @@ private:
     LifecycleState m_lifecycleState = LifecycleState::Active;
     LifecycleState m_recommendedState = LifecycleState::Active;
     bool m_inspector = false;
+    QPointer<QWebEngineUrlRequestInterceptor> m_requestInterceptor;
 };
 
 } // namespace QtWebEngineCore

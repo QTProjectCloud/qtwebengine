@@ -41,12 +41,13 @@
 #define BROWSER_ACCESSIBILITY_MANAGER_QT_H
 
 #include "content/browser/accessibility/browser_accessibility_manager.h"
-#ifndef QT_NO_ACCESSIBILITY
-#include <QtCore/qobject.h>
 
-QT_BEGIN_NAMESPACE
-class QAccessibleInterface;
-QT_END_NAMESPACE
+#include <QtCore/qobject.h>
+#include <QtGui/qtgui-config.h>
+
+#if QT_CONFIG(accessibility)
+
+QT_FORWARD_DECLARE_CLASS(QAccessibleInterface)
 
 namespace content {
 
@@ -74,5 +75,5 @@ private:
 
 }
 
-#endif // QT_NO_ACCESSIBILITY
+#endif // QT_CONFIG(accessibility)
 #endif

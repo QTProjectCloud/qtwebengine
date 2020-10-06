@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: http://www.qt.io/licensing/
 **
 ** This file is part of the QtPDF module of the Qt Toolkit.
@@ -128,7 +128,7 @@ public:
     }
 
 private:
-    QVector<BookmarkNode*> m_childNodes;
+    QList<BookmarkNode*> m_childNodes;
     BookmarkNode *m_parentNode;
 
     QString m_title;
@@ -189,7 +189,7 @@ public:
 
             const int titleLength = int(FPDFBookmark_GetTitle(bookmark, nullptr, 0));
 
-            QVector<ushort> titleBuffer(titleLength);
+            QList<char16_t> titleBuffer(titleLength);
             FPDFBookmark_GetTitle(bookmark, titleBuffer.data(), quint32(titleBuffer.length()));
 
             const FPDF_DEST dest = FPDFBookmark_GetDest(document, bookmark);

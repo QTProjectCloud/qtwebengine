@@ -54,9 +54,7 @@
 #include "qwebenginepage.h"
 
 #include "qwebenginecallback_p.h"
-#include "qwebenginecontextmenudata.h"
 #include "qwebenginescriptcollection.h"
-#include "render_view_context_menu_qt.h"
 #include "web_contents_adapter_client.h"
 
 #include <QtCore/qcompilerdetection.h>
@@ -78,8 +76,6 @@ class QWebEnginePage;
 class QWebEngineProfile;
 class QWebEngineSettings;
 class QWebEngineView;
-
-QWebEnginePage::WebAction editorActionForKeyEvent(QKeyEvent* event);
 
 class QWebEnginePagePrivate : public QtWebEngineCore::WebContentsAdapterClient
 {
@@ -108,18 +104,18 @@ public:
     QColor backgroundColor() const override;
     void loadStarted(const QUrl &provisionalUrl, bool isErrorPage = false) override;
     void loadCommitted() override { }
-    void loadVisuallyCommitted() override { }
+    void didFirstVisuallyNonEmptyPaint() override { }
     void loadFinished(bool success, const QUrl &url, bool isErrorPage = false, int errorCode = 0, const QString &errorDescription = QString()) override;
     void focusContainer() override;
     void unhandledKeyEvent(QKeyEvent *event) override;
-    void adoptNewWindow(QSharedPointer<QtWebEngineCore::WebContentsAdapter> newWebContents, WindowOpenDisposition disposition, bool userGesture, const QRect &initialGeometry, const QUrl &targetUrl) override;
-    void adoptNewWindowImpl(QWebEnginePage *newPage,
-            const QSharedPointer<QtWebEngineCore::WebContentsAdapter> &newWebContents,
-            const QRect &initialGeometry);
+    QSharedPointer<QtWebEngineCore::WebContentsAdapter>
+    adoptNewWindow(QSharedPointer<QtWebEngineCore::WebContentsAdapter> newWebContents,
+                   WindowOpenDisposition disposition, bool userGesture,
+                   const QRect &initialGeometry, const QUrl &targetUrl) override;
     bool isBeingAdopted() override;
     void close() override;
     void windowCloseRejected() override;
-    void contextMenuRequested(const QtWebEngineCore::WebEngineContextMenuData &data) override;
+    void contextMenuRequested(QWebEngineContextMenuRequest *request) override;
     void navigationRequested(int navigationType, const QUrl &url, int &navigationRequestAction, bool isMainFrame) override;
     void requestFullScreenMode(const QUrl &origin, bool fullscreen) override;
     bool isFullScreenMode() const override;
@@ -136,15 +132,15 @@ public:
     void authenticationRequired(QSharedPointer<QtWebEngineCore::AuthenticationDialogController>) override;
     void releaseProfile() override;
     void runMediaAccessPermissionRequest(const QUrl &securityOrigin, MediaRequestFlags requestFlags) override;
-    void runGeolocationPermissionRequest(const QUrl &securityOrigin) override;
-    void runUserNotificationPermissionRequest(const QUrl &securityOrigin) override;
+    void runFeaturePermissionRequest(QtWebEngineCore::ProfileAdapter::PermissionType permission, const QUrl &securityOrigin) override;
     void runMouseLockPermissionRequest(const QUrl &securityOrigin) override;
     void runQuotaRequest(QWebEngineQuotaRequest) override;
     void runRegisterProtocolHandlerRequest(QWebEngineRegisterProtocolHandlerRequest) override;
     QObject *accessibilityParentObject() override;
-    QtWebEngineCore::WebEngineSettings *webEngineSettings() const override;
-    void allowCertificateError(const QSharedPointer<CertificateErrorController> &controller) override;
-    void selectClientCert(const QSharedPointer<ClientCertSelectController> &controller) override;
+    QWebEngineSettings *webEngineSettings() const override;
+    void allowCertificateError(const QWebEngineCertificateError &error) override;
+    void selectClientCert(
+            const QSharedPointer<QtWebEngineCore::ClientCertSelectController> &controller) override;
     void renderProcessTerminated(RenderProcessTerminationStatus terminationStatus, int exitCode) override;
     void requestGeometryChange(const QRect &geometry, const QRect &frameGeometry) override;
     void updateScrollPosition(const QPointF &position) override;
@@ -162,7 +158,6 @@ public:
     void hideTouchSelectionMenu() override { }
     const QObject *holdingQObject() const override;
     ClientType clientType() override { return QtWebEngineCore::WebContentsAdapterClient::WidgetsClient; }
-    void interceptRequest(QWebEngineUrlRequestInfo &) override;
     void widgetChanged(QtWebEngineCore::RenderWidgetHostViewQtDelegate *newWidget) override;
     void findTextFinished(const QWebEngineFindTextResult &result) override;
 
@@ -188,7 +183,6 @@ public:
     QWebEngineSettings *settings;
     QWebEngineView *view;
     QUrl url;
-    QWebEngineContextMenuData contextData;
     bool isLoading;
     QWebEngineScriptCollection scriptCollection;
     bool m_isBeingAdopted;
@@ -203,7 +197,6 @@ public:
     bool defaultAudioMuted;
     qreal defaultZoomFactor;
     QTimer wasShownTimer;
-    QWebEngineUrlRequestInterceptor *requestInterceptor;
     QtWebEngineCore::RenderWidgetHostViewQtDelegateWidget *widget = nullptr;
 
     mutable QtWebEngineCore::CallbackDirectory m_callbacks;
@@ -211,24 +204,6 @@ public:
 #if QT_CONFIG(webengine_printing_and_pdf)
     QPrinter *currentPrinter;
 #endif
-
-    QList<QSharedPointer<CertificateErrorController>> m_certificateErrorControllers;
-};
-
-class QContextMenuBuilder : public QtWebEngineCore::RenderViewContextMenuQt
-{
-public:
-    QContextMenuBuilder(const QtWebEngineCore::WebEngineContextMenuData &data, QWebEnginePage *page, QMenu *menu);
-
-private:
-    virtual bool hasInspector() override;
-    virtual bool isFullScreenMode() override;
-
-    virtual void addMenuItem(ContextMenuItem entry) override;
-    virtual bool isMenuItemEnabled(ContextMenuItem entry) override;
-
-    QWebEnginePage *m_page;
-    QMenu *m_menu;
 };
 
 QT_END_NAMESPACE

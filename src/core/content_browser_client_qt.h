@@ -76,7 +76,7 @@ namespace QtWebEngineCore {
 
 class BrowserMainPartsQt;
 class ProfileQt;
-class ShareGroupQtQuick;
+class ShareGroupQt;
 
 class ContentBrowserClientQt : public content::ContentBrowserClient
 {
@@ -88,9 +88,6 @@ public:
     gl::GLShareGroup* GetInProcessGpuShareGroup() override;
     content::MediaObserver* GetMediaObserver() override;
     scoped_refptr<content::QuotaPermissionContext> CreateQuotaPermissionContext() override;
-    void GetQuotaSettings(content::BrowserContext *context,
-                          content::StoragePartition *partition,
-                          base::OnceCallback<void(base::Optional<storage::QuotaSettings>)> callback) override;
     void OverrideWebkitPrefs(content::RenderViewHost *, content::WebPreferences *) override;
     void AllowCertificateError(content::WebContents *web_contents,
                                int cert_error,
@@ -98,12 +95,12 @@ public:
                                const GURL &request_url,
                                bool is_main_frame_request,
                                bool strict_enforcement,
-                               const base::Callback<void(content::CertificateRequestResultType)> &callback) override;
+                               base::OnceCallback<void(content::CertificateRequestResultType)> callback) override;
     base::OnceClosure SelectClientCertificate(content::WebContents* web_contents,
                                               net::SSLCertRequestInfo* cert_request_info,
                                               net::ClientCertIdentityList client_certs,
                                               std::unique_ptr<content::ClientCertificateDelegate> delegate) override;
-    std::unique_ptr<net::ClientCertStore> CreateClientCertStore(content::ResourceContext *resource_context) override;
+    std::unique_ptr<net::ClientCertStore> CreateClientCertStore(content::BrowserContext *browser_context) override;
     content::DevToolsManagerDelegate *GetDevToolsManagerDelegate() override;
     content::PlatformNotificationService * GetPlatformNotificationService(content::BrowserContext *browser_context) override;
 
@@ -120,8 +117,13 @@ public:
                                        mojo::ScopedMessagePipeHandle interface_pipe) override;
     void BindHostReceiverForRenderer(content::RenderProcessHost *render_process_host,
                                      mojo::GenericPendingReceiver receiver) override;
+    void RegisterBrowserInterfaceBindersForFrame(content::RenderFrameHost *render_frame_host,
+                                                 service_manager::BinderMapWithContext<content::RenderFrameHost *> *map) override;
     void RunServiceInstance(const service_manager::Identity &identity,
                             mojo::PendingReceiver<service_manager::mojom::Service> *receiver) override;
+    void ExposeInterfacesToRenderer(service_manager::BinderRegistry *registry,
+                                    blink::AssociatedInterfaceRegistry *associated_registry,
+                                    content::RenderProcessHost *render_process_host) override;
 
     std::vector<service_manager::Manifest> GetExtraServiceManifests() override;
     base::Optional<service_manager::Manifest> GetServiceManifestOverlay(base::StringPiece name) override;
@@ -144,7 +146,7 @@ public:
             network::mojom::RestrictedCookieManagerRole role,
             content::BrowserContext *browser_context,
             const url::Origin &origin,
-            const GURL &site_for_cookies,
+            const net::SiteForCookies &site_for_cookies,
             const url::Origin &top_frame_origin,
             bool is_service_worker,
             int process_id,
@@ -186,8 +188,12 @@ public:
     bool DoesSiteRequireDedicatedProcess(content::BrowserContext *browser_context,
                                          const GURL &effective_site_url) override;
     bool ShouldUseSpareRenderProcessHost(content::BrowserContext *browser_context, const GURL& site_url) override;
-    bool ShouldTreatURLSchemeAsFirstPartyWhenTopLevel(base::StringPiece scheme) override;
-
+    bool ShouldTreatURLSchemeAsFirstPartyWhenTopLevel(base::StringPiece scheme,
+                                                      bool is_embedded_origin_secure) override;
+    void OverrideURLLoaderFactoryParams(content::BrowserContext *browser_context,
+                                        const url::Origin &origin,
+                                        bool is_for_isolated_world,
+                                        network::mojom::URLLoaderFactoryParams *factory_params) override;
 #if defined(Q_OS_LINUX)
     void GetAdditionalMappedFilesForChildProcess(const base::CommandLine& command_line, int child_process_id, content::PosixFileDescriptorInfo* mappings) override;
 #endif
@@ -208,14 +214,14 @@ public:
 
     bool HandleExternalProtocol(
             const GURL &url,
-            base::Callback<content::WebContents*(void)> web_contents_getter,
+            base::OnceCallback<content::WebContents*()> web_contents_getter,
             int child_id,
             content::NavigationUIData *navigation_data,
             bool is_main_frame,
             ui::PageTransition page_transition,
             bool has_user_gesture,
             const base::Optional<url::Origin> &initiating_origin,
-            network::mojom::URLLoaderFactoryPtr *out_factory) override;
+            mojo::PendingRemote<network::mojom::URLLoaderFactory> *out_factory) override;
 
     std::vector<std::unique_ptr<blink::URLLoaderThrottle>> CreateURLLoaderThrottles(
             const network::ResourceRequest &request, content::BrowserContext *browser_context,
@@ -232,9 +238,12 @@ public:
                                     int render_process_id,
                                     URLLoaderFactoryType type,
                                     const url::Origin &request_initiator,
+                                    base::Optional<int64_t> navigation_id,
                                     mojo::PendingReceiver<network::mojom::URLLoaderFactory> *factory_receiver,
                                     mojo::PendingRemote<network::mojom::TrustedURLLoaderHeaderClient> *header_client,
-                                    bool *bypass_redirect_checks) override;
+                                    bool *bypass_redirect_checks,
+                                    bool *disable_secure_dns,
+                                    network::mojom::URLLoaderFactoryOverridePtr *factory_override) override;
     scoped_refptr<network::SharedURLLoaderFactory> GetSystemSharedURLLoaderFactory() override;
     network::mojom::NetworkContext *GetSystemNetworkContext() override;
     void OnNetworkServiceCreated(network::mojom::NetworkService *network_service) override;
@@ -256,7 +265,7 @@ public:
 private:
     void InitFrameInterfaces();
 
-    scoped_refptr<ShareGroupQtQuick> m_shareGroupQtQuick;
+    scoped_refptr<ShareGroupQt> m_shareGroupQt;
     std::unique_ptr<service_manager::BinderRegistry> m_frameInterfaces;
     std::unique_ptr<service_manager::BinderRegistryWithArgs<content::RenderFrameHost*>> m_frameInterfacesParameterized;
 };

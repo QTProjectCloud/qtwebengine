@@ -26,6 +26,12 @@
 **
 ****************************************************************************/
 
+#include <httpserver.h>
+
+#if QT_CONFIG(ssl)
+#include <httpsserver.h>
+#endif
+
 #include <QtCore/QScopedPointer>
 #include <QTemporaryDir>
 #include <QtQuickTest/quicktest.h>
@@ -122,15 +128,13 @@ int main(int argc, char **argv)
     sigaction(SIGSEGV, &sigAction, 0);
 #endif
 
-    // Inject the mock ui delegates module
-    qputenv("QML2_IMPORT_PATH", QByteArray(TESTS_SOURCE_DIR "qmltests/mock-delegates"));
     QScopedPointer<Application> app;
 
     // Force to use English language for testing due to error message checks
     QLocale::setDefault(QLocale("en"));
 
     static QByteArrayList params = {QByteArrayLiteral("--use-fake-device-for-media-stream")};
-    QVector<const char *> w_argv(argc); \
+    QList<const char *> w_argv(argc); \
     for (int i = 0; i < argc; ++i) \
         w_argv[i] = argv[i]; \
     for (int i = 0; i < params.size(); ++i) \
@@ -145,6 +149,17 @@ int main(int argc, char **argv)
     qmlRegisterType<TempDir>("Test.util", 1, 0, "TempDir");
 
     QTEST_SET_MAIN_SOURCE_PATH
+    qmlRegisterSingletonType<HttpServer>("Test.Shared", 1, 0, "HttpServer", [&] (QQmlEngine *, QJSEngine *) {
+        auto server = new HttpServer;
+        server->setResourceDirs({ TESTS_SHARED_DATA_DIR, QUICK_TEST_SOURCE_DIR });
+        return server;
+    });
+
+#if QT_CONFIG(ssl)
+    qmlRegisterSingletonType<HttpsServer>(
+            "Test.Shared", 1, 0, "HttpsServer",
+            [&](QQmlEngine *, QJSEngine *) { return new HttpsServer; });
+#endif
 
     int i = quick_test_main(argc, argv, "qmltests", QUICK_TEST_SOURCE_DIR);
     return i;

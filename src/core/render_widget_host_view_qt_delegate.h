@@ -53,37 +53,17 @@
 
 #include "qtwebenginecoreglobal_p.h"
 
-#include <QRect>
-#include <QtGui/qwindowdefs.h>
+#include <QtCore/QRect>
+#include <QtGui/QColor>
+#include <QtGui/QCursor>
+#include <QtGui/QImage>
 
 QT_BEGIN_NAMESPACE
-class QEvent;
-class QSGLayer;
-class QSGNode;
-class QSGRectangleNode;
-class QSGTexture;
-class QVariant;
-class QInputMethodEvent;
-
-class QSGImageNode;
-
+class QWheelEvent;
+class QWindow;
 QT_END_NAMESPACE
 
 namespace QtWebEngineCore {
-
-class WebContentsAdapterClient;
-
-class Q_WEBENGINECORE_PRIVATE_EXPORT RenderWidgetHostViewQtDelegateClient {
-public:
-    virtual ~RenderWidgetHostViewQtDelegateClient() { }
-    virtual QSGNode *updatePaintNode(QSGNode *) = 0;
-    virtual void notifyShown() = 0;
-    virtual void notifyHidden() = 0;
-    virtual void visualPropertiesChanged() = 0;
-    virtual bool forwardEvent(QEvent *) = 0;
-    virtual QVariant inputMethodQuery(Qt::InputMethodQuery query) = 0;
-    virtual void closePopup() = 0;
-};
 
 class Q_WEBENGINECORE_PRIVATE_EXPORT RenderWidgetHostViewQtDelegate {
 public:
@@ -99,18 +79,13 @@ public:
     virtual void hide() = 0;
     virtual bool isVisible() const = 0;
     virtual QWindow* window() const = 0;
-    virtual QSGTexture *createTextureFromImage(const QImage &) = 0;
-    virtual QSGLayer *createLayer() = 0;
-    virtual QSGImageNode *createImageNode() = 0;
-    virtual QSGRectangleNode *createRectangleNode() = 0;
-    virtual void update() = 0;
     virtual void updateCursor(const QCursor &) = 0;
     virtual void resize(int width, int height) = 0;
     virtual void move(const QPoint &) = 0;
     virtual void inputMethodStateChanged(bool editorVisible, bool passwordInput) = 0;
     virtual void setInputMethodHints(Qt::InputMethodHints hints) = 0;
     virtual void setClearColor(const QColor &color) = 0;
-    virtual bool copySurface(const QRect &, const QSize &, QImage &) = 0;
+    virtual void unhandledWheelEvent(QWheelEvent *) {}
 };
 
 } // namespace QtWebEngineCore

@@ -43,7 +43,7 @@
 
 #include "browser_accessibility_qt.h"
 
-#ifndef QT_NO_ACCESSIBILITY
+#if QT_CONFIG(accessibility)
 
 #include "ui/accessibility/ax_enums.mojom.h"
 
@@ -225,15 +225,6 @@ QAccessible::Role BrowserAccessibilityQt::role() const
         return QAccessible::AlertMessage;
     case ax::mojom::Role::kAnchor:
         return QAccessible::Link;
-
-    // REMINDER: annotation roles are removed from Chromium 80: https://chromium-review.googlesource.com/c/chromium/src/+/1907074
-    case ax::mojom::Role::kAnnotationAttribution:
-    case ax::mojom::Role::kAnnotationCommentary:
-    case ax::mojom::Role::kAnnotationPresence:
-    case ax::mojom::Role::kAnnotationRevision:
-    case ax::mojom::Role::kAnnotationSuggestion:
-        return QAccessible::Section;
-
     case ax::mojom::Role::kApplication:
         return QAccessible::Document; // returning Application here makes Qt return the top level app object
     case ax::mojom::Role::kArticle:
@@ -258,6 +249,8 @@ QAccessible::Role BrowserAccessibilityQt::role() const
         return QAccessible::CheckBox;
     case ax::mojom::Role::kClient:
         return QAccessible::Client;
+    case ax::mojom::Role::kCode:
+        return QAccessible::StaticText;
     case ax::mojom::Role::kColorWell:
         return QAccessible::ColorChooser;
     case ax::mojom::Role::kColumn:
@@ -270,6 +263,8 @@ QAccessible::Role BrowserAccessibilityQt::role() const
         return QAccessible::ComboBox;
     case ax::mojom::Role::kComplementary:
         return QAccessible::ComplementaryContent;
+    case ax::mojom::Role::kComment:
+        return QAccessible::Section;
     case ax::mojom::Role::kContentDeletion:
     case ax::mojom::Role::kContentInsertion:
         return QAccessible::Grouping;
@@ -348,6 +343,8 @@ QAccessible::Role BrowserAccessibilityQt::role() const
         return QAccessible::Document;
     case ax::mojom::Role::kEmbeddedObject:
         return QAccessible::Grouping;
+    case ax::mojom::Role::kEmphasis:
+        return QAccessible::StaticText;
     case ax::mojom::Role::kFeed:
         return QAccessible::Section;
     case ax::mojom::Role::kFigcaption:
@@ -395,7 +392,6 @@ QAccessible::Role BrowserAccessibilityQt::role() const
         return QAccessible::StaticText;
     case ax::mojom::Role::kLayoutTable:
     case ax::mojom::Role::kLayoutTableCell:
-    case ax::mojom::Role::kLayoutTableColumn:
     case ax::mojom::Role::kLayoutTableRow:
         return QAccessible::Section;
     case ax::mojom::Role::kLegend:
@@ -452,8 +448,14 @@ QAccessible::Role BrowserAccessibilityQt::role() const
         return QAccessible::Pane;
     case ax::mojom::Role::kParagraph:
         return QAccessible::Paragraph;
+    case ax::mojom::Role::kPdfActionableHighlight:
+        return QAccessible::Button;
+    case ax::mojom::Role::kPluginObject:
+        return QAccessible::Grouping;
     case ax::mojom::Role::kPopUpButton:
         return QAccessible::ComboBox;
+    case ax::mojom::Role::kPortal:
+        return QAccessible::Button;
     case ax::mojom::Role::kPre:
         return QAccessible::Section;
     case ax::mojom::Role::kPresentational:
@@ -468,6 +470,8 @@ QAccessible::Role BrowserAccessibilityQt::role() const
         return QAccessible::Section;
     case ax::mojom::Role::kRow:
         return QAccessible::Row;
+    case ax::mojom::Role::kRowGroup:
+        return QAccessible::Section;
     case ax::mojom::Role::kRowHeader:
         return QAccessible::RowHeader;
     case ax::mojom::Role::kRuby:
@@ -495,6 +499,10 @@ QAccessible::Role BrowserAccessibilityQt::role() const
         return QAccessible::StaticText;
     case ax::mojom::Role::kStatus:
         return QAccessible::Indicator;
+    case ax::mojom::Role::kStrong:
+        return QAccessible::StaticText;
+    case ax::mojom::Role::kSuggestion:
+        return QAccessible::Section;
     case ax::mojom::Role::kSvgRoot:
         return QAccessible::Graphic;
     case ax::mojom::Role::kSwitch:
@@ -990,4 +998,4 @@ void BrowserAccessibilityQt::modelChange(QAccessibleTableModelChangeEvent *)
 
 } // namespace content
 
-#endif // QT_NO_ACCESSIBILITY
+#endif // QT_CONFIG(accessibility)

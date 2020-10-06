@@ -37,34 +37,27 @@
 **
 ****************************************************************************/
 
+#if defined(USE_OZONE)
 #include "surface_factory_qt.h"
-#include "gl_context_qt.h"
-#include "gl_ozone_egl_qt.h"
+
+#include "ozone/gl_context_qt.h"
+#include "ozone/gl_ozone_egl_qt.h"
 #if defined(USE_GLX)
-#include "gl_ozone_glx_qt.h"
+#include "ozone/gl_ozone_glx_qt.h"
 #endif
 
-#include "ui/gl/gl_surface.h"
-#include <QGuiApplication>
-
-#if defined(USE_OZONE)
-
-#include "ozone/gl_ozone_egl_qt.h"
-#include "ozone/surface_factory_qt.h"
-#include "ui/gl/gl_surface.h"
 namespace QtWebEngineCore {
 
 SurfaceFactoryQt::SurfaceFactoryQt()
 {
-    Q_ASSERT(qApp);
 #if defined(USE_GLX)
-    if (GLContextHelper::getGlXConfig()) {
-        m_impl = gl::kGLImplementationDesktopGL;
+    if (GLContextHelper::getGlxPlatformInterface()) {
+        m_impl = { gl::kGLImplementationDesktopGL };
         m_ozone.reset(new ui::GLOzoneGLXQt());
     } else
 #endif
-    if (GLContextHelper::getEGLConfig()) {
-        m_impl = gl::kGLImplementationEGLGLES2;
+    if (GLContextHelper::getEglPlatformInterface()) {
+        m_impl = { gl::kGLImplementationDesktopGL, gl::kGLImplementationEGLGLES2 };
         m_ozone.reset(new ui::GLOzoneEGLQt());
     } else {
         qFatal("No suitable graphics backend found\n");
@@ -73,7 +66,7 @@ SurfaceFactoryQt::SurfaceFactoryQt()
 
 std::vector<gl::GLImplementation> SurfaceFactoryQt::GetAllowedGLImplementations()
 {
-    return { m_impl };
+    return m_impl;
 }
 
 ui::GLOzone* SurfaceFactoryQt::GetGLOzone(gl::GLImplementation implementation)

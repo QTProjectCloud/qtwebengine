@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -40,90 +40,154 @@
 #ifndef COMPOSITOR_H
 #define COMPOSITOR_H
 
-#include "base/memory/weak_ptr.h"
-#include "components/viz/common/frame_timing_details.h"
-#include "components/viz/common/frame_sinks/begin_frame_source.h"
-#include "components/viz/common/quads/compositor_frame.h"
-
-#include <QtCore/qglobal.h>
-#include <QtCore/qshareddata.h>
-
-#include <QtCore/qglobal.h>
-#include <QtCore/qshareddata.h>
+#include "qtwebenginecoreglobal_p.h"
 
 QT_BEGIN_NAMESPACE
-class QSGNode;
+class QImage;
+class QSize;
 QT_END_NAMESPACE
 
-namespace content {
-class RenderWidgetHost;
-}
 namespace viz {
-struct ReturnedResource;
-namespace mojom {
-class CompositorFrameSinkClient;
-} // namespace mojom
+class FrameSinkId;
 } // namespace viz
 
 namespace QtWebEngineCore {
 
-class CompositorResourceTracker;
-class RenderWidgetHostViewQtDelegate;
-
-// Receives viz::CompositorFrames from child compositors and provides QSGNodes
-// to the Qt Quick renderer.
+// Produces composited frames for display.
 //
-// The life cycle of a frame:
-//
-//   Step 1. A new CompositorFrame is received from child compositors and handed
-//   off to submitFrame(). The new frame will start off in a pending state.
-//
-//   Step 2. Once the new frame is ready to be rendered, Compositor will notify
-//   the client by running the callback given to submitFrame().
-//
-//   Step 3. Once the client is ready to render, updatePaintNode() should be
-//   called to receive the scene graph for the new frame. This call will commit
-//   the pending frame. Until the next frame is ready, all subsequent calls to
-//   updatePaintNode() will keep using this same committed frame.
-//
-//   Step 4. The Compositor will return unneeded resources back to the child
-//   compositors. Go to step 1.
-class Compositor final : private viz::BeginFrameObserverBase
+// Used by quick/widgets libraries for accessing the frame and
+// controlling frame swapping. Must be cast to a subclass to access
+// the frame as QImage or OpenGL texture, etc.
+class Q_WEBENGINECORE_PRIVATE_EXPORT Compositor
 {
+    struct Binding;
+
 public:
-    explicit Compositor(content::RenderWidgetHost *host);
-    ~Compositor() override;
+    // Identifies the implementation type.
+    enum class Type {
+        Software,
+        OpenGL,
+    };
 
-    void setFrameSinkClient(viz::mojom::CompositorFrameSinkClient *frameSinkClient);
-    void setNeedsBeginFrames(bool needsBeginFrames);
+    // Identifies a compositor.
+    //
+    // The purpose of assigning ids to compositors is to allow the
+    // corresponding observer to be registered before the compositor
+    // itself is created, which is necessary since the creation
+    // happens on a different thread in the depths of viz.
+    //
+    // (Maps to viz::FrameSinkId internally).
+    struct Id
+    {
+        quint32 client_id;
+        quint32 sink_id;
 
-    void submitFrame(viz::CompositorFrame frame, base::OnceClosure callback);
-    QSGNode *updatePaintNode(QSGNode *oldNode, RenderWidgetHostViewQtDelegate *viewDelegate);
+        Id(viz::FrameSinkId);
+    };
+
+    // Pointer to Compositor or Observer that holds a lock to prevent
+    // either from being unbound and destroyed.
+    template<typename T>
+    class Handle
+    {
+    public:
+        Handle(std::nullptr_t) : m_data(nullptr) { }
+        Handle(T *data) : m_data(data) { }
+        Handle(Handle &&that) : m_data(that.m_data) { that.m_data = nullptr; }
+        ~Handle()
+        {
+            if (m_data)
+                Compositor::unlockBindings();
+        }
+        T *operator->() const { return m_data; }
+        T &operator*() const { return *m_data; }
+        explicit operator bool() const { return m_data; }
+
+    private:
+        T *m_data;
+    };
+
+    // Observes the compositor corresponding to the given id.
+    //
+    // Only one observer can exist per compositor.
+    class Q_WEBENGINECORE_PRIVATE_EXPORT Observer
+    {
+    public:
+        // Binding to compositor
+        void bind(Id id);
+        void unbind();
+
+        // Compositor if bound
+        Handle<Compositor> compositor();
+
+        // There's a new frame ready, time to swapFrame().
+        virtual void readyToSwap() = 0;
+
+    protected:
+        Observer() = default;
+        ~Observer() = default;
+
+    private:
+        Binding *m_binding = nullptr;
+    };
+
+    // Type determines which methods can be called.
+    Type type() const { return m_type; }
+
+    // Binding to observer.
+    void bind(Id id);
+    void unbind();
+
+    // Observer if bound.
+    Handle<Observer> observer();
+
+    // Update to next frame if possible.
+    virtual void swapFrame() = 0;
+
+    // Ratio of pixels to DIPs.
+    //
+    // Don't use the devicePixelRatio of QImage, it's always 1.
+    virtual float devicePixelRatio() = 0;
+
+    // Size of frame in pixels.
+    virtual QSize size() = 0;
+
+    // Whether frame needs an alpha channel.
+    //
+    // In software mode, the image format can be either
+    //   QImage::Format_ARGB32_Premultiplied or
+    //   QImage::Format_RGBA8888_Premultiplied
+    //
+    // In OpenGL mode, the texture format is either GL_RGBA or GL_RGB.
+    virtual bool hasAlphaChannel() = 0;
+
+    // (Software) QImage of the frame.
+    //
+    // This is a big image so we should try not to make copies of it.
+    // In particular, the client should drop its QImage reference
+    // before calling swapFrame(), otherwise each swap will cause a
+    // detach.
+    virtual QImage image();
+
+    // (OpenGL) Wait on texture fence in Qt's current OpenGL context.
+    virtual void waitForTexture();
+
+    // (OpenGL) Texture of the frame.
+    virtual int textureId();
+
+protected:
+    Compositor(Type type) : m_type(type) { }
+    ~Compositor() = default;
 
 private:
-    void runSubmitCallback();
-    void notifyFrameCommitted();
-    void sendPresentationFeedback(uint frame_token);
+    template<typename T>
+    friend class Handle;
 
-    // viz::BeginFrameObserverBase
-    bool OnBeginFrameDerivedImpl(const viz::BeginFrameArgs &args) override;
-    void OnBeginFrameSourcePausedChanged(bool paused) override;
+    class BindingMap;
+    static void unlockBindings();
 
-    viz::CompositorFrame m_committedFrame;
-    viz::CompositorFrame m_pendingFrame;
-    base::OnceClosure m_submitCallback;
-    std::unique_ptr<CompositorResourceTracker> m_resourceTracker;
-    content::RenderWidgetHost *m_host;
-    std::unique_ptr<viz::SyntheticBeginFrameSource> m_beginFrameSource;
-    base::flat_map<uint32_t, viz::FrameTimingDetails> m_presentations;
-    viz::mojom::CompositorFrameSinkClient *m_frameSinkClient = nullptr;
-    bool m_updatePaintNodeShouldCommit = false;
-    bool m_needsBeginFrames = false;
-
-    scoped_refptr<base::SingleThreadTaskRunner> m_taskRunner;
-    base::WeakPtrFactory<Compositor> m_weakPtrFactory{this};
-
-    DISALLOW_COPY_AND_ASSIGN(Compositor);
+    const Type m_type;
+    Binding *m_binding = nullptr;
 };
 
 } // namespace QtWebEngineCore

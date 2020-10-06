@@ -48,12 +48,14 @@
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
+#include "media/gpu/buildflags.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/jstemplate_builder.h"
 #include "net/grit/net_resources.h"
 #include "net/base/net_module.h"
+#include "services/service_manager/embedder/switches.h"
 #include "services/service_manager/sandbox/switches.h"
 #include "url/url_util_qt.h"
 
@@ -68,10 +70,26 @@
 #endif
 
 #if defined(OS_LINUX)
+#include "media/audio/audio_manager.h"
 #include "ui/base/ui_base_switches.h"
 #endif
 
+// must be included before vaapi_wrapper.h
 #include <QtCore/qcoreapplication.h>
+
+#if defined(OS_WIN)
+#include "media/gpu/windows/dxva_video_decode_accelerator_win.h"
+#include "media/gpu/windows/media_foundation_video_encode_accelerator_win.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "content/public/common/content_features.h"
+#include "media/gpu/mac/vt_video_decode_accelerator_mac.h"
+#endif
+
+#if BUILDFLAG(USE_VAAPI)
+#include "media/gpu/vaapi/vaapi_wrapper.h"
+#endif
 
 namespace content {
 ContentClient *GetContentClient();
@@ -107,7 +125,7 @@ struct LazyDirectoryListerCacher
         dict.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
         std::string html =
                 webui::GetI18nTemplateHtml(
-                    ui::ResourceBundle::GetSharedInstance().DecompressDataResource(IDR_DIR_HEADER_HTML),
+                    ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(IDR_DIR_HEADER_HTML),
                     &dict);
         html_data = base::RefCountedString::TakeString(&html);
     }
@@ -160,7 +178,7 @@ void ContentMainDelegateQt::PreSandboxStartup()
 #endif
 
     net::NetModule::SetResourceProvider(PlatformResourceProvider);
-    ui::ResourceBundle::InitSharedInstanceWithLocale(WebEngineLibraryInfo::getApplicationLocale(), 0, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
+    ui::ResourceBundle::InitSharedInstanceWithLocale(WebEngineLibraryInfo::getApplicationLocale(), nullptr, ui::ResourceBundle::LOAD_COMMON_RESOURCES);
 
     base::CommandLine* parsedCommandLine = base::CommandLine::ForCurrentProcess();
     logging::LoggingSettings settings;
@@ -188,6 +206,40 @@ void ContentMainDelegateQt::PreSandboxStartup()
     if (parsedCommandLine->HasSwitch(switches::kSingleProcess))
         setlocale(LC_NUMERIC, "C");
 #endif
+
+    // from gpu_main.cc:
+#if BUILDFLAG(USE_VAAPI)
+    media::VaapiWrapper::PreSandboxInitialization();
+#endif
+#if defined(OS_WIN)
+    media::DXVAVideoDecodeAccelerator::PreSandboxInitialization();
+    media::MediaFoundationVideoEncodeAccelerator::PreSandboxInitialization();
+#endif
+
+#if defined(OS_MACOSX)
+    if (base::FeatureList::IsEnabled(features::kMacV2GPUSandbox)) {
+        TRACE_EVENT0("gpu", "Initialize VideoToolbox");
+        media::InitializeVideoToolbox();
+    }
+#endif
+
+    if (parsedCommandLine->HasSwitch(service_manager::switches::kApplicationName)) {
+        const std::string appName = parsedCommandLine->GetSwitchValueASCII(service_manager::switches::kApplicationName);
+        QCoreApplication::setApplicationName(QString::fromStdString(appName));
+#if defined(OS_LINUX)
+        media::AudioManager::SetGlobalAppName(appName);
+#endif
+    }
+}
+
+void ContentMainDelegateQt::PostEarlyInitialization(bool)
+{
+    PostFieldTrialInitialization();
+}
+
+content::ContentClient *ContentMainDelegateQt::CreateContentClient()
+{
+    return &m_contentClient;
 }
 
 content::ContentBrowserClient *ContentMainDelegateQt::CreateContentBrowserClient()
@@ -254,8 +306,6 @@ bool ContentMainDelegateQt::BasicStartupComplete(int *exit_code)
 #if QT_CONFIG(webengine_spellchecker)
     SafeOverridePath(base::DIR_APP_DICTIONARIES, WebEngineLibraryInfo::getPath(base::DIR_APP_DICTIONARIES));
 #endif
-    if (!content::GetContentClient())
-        content::SetContentClient(new ContentClientQt);
 
     url::CustomScheme::LoadSchemes(base::CommandLine::ForCurrentProcess());
 

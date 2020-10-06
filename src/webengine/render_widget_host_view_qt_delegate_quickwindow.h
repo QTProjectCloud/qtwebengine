@@ -66,18 +66,12 @@ public:
     void hide() override;
     bool isVisible() const override;
     QWindow* window() const override;
-    QSGTexture *createTextureFromImage(const QImage &) override;
-    QSGLayer *createLayer() override;
-    QSGImageNode *createImageNode() override;
-    QSGRectangleNode *createRectangleNode() override;
-    void update() override;
     void updateCursor(const QCursor &) override;
     void resize(int width, int height) override;
     void move(const QPoint &screenPos) override;
     void inputMethodStateChanged(bool, bool) override {}
     void setInputMethodHints(Qt::InputMethodHints) override { }
     void setClearColor(const QColor &) override { }
-    bool copySurface(const QRect &, const QSize &, QImage &) override { return false; }
 
     void setVirtualParent(QQuickItem *virtualParent);
 

@@ -39,7 +39,7 @@
 
 #include "display_gl_output_surface.h"
 
-#include "chromium_gpu_helper.h"
+#include "type_conversion.h"
 
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/viz/service/display/display.h"
@@ -49,12 +49,14 @@
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/texture_base.h"
 #include "gpu/ipc/in_process_command_buffer.h"
-#include "ui/gl/color_space_utils.h"
+#include "ui/gfx/buffer_format_util.h"
 
 namespace QtWebEngineCore {
 
-DisplayGLOutputSurface::DisplayGLOutputSurface(scoped_refptr<viz::VizProcessContextProvider> contextProvider)
+DisplayGLOutputSurface::DisplayGLOutputSurface(
+        scoped_refptr<viz::VizProcessContextProvider> contextProvider)
     : OutputSurface(contextProvider)
+    , Compositor(Compositor::Type::OpenGL)
     , m_commandBuffer(contextProvider->command_buffer())
     , m_gl(contextProvider->ContextGL())
     , m_vizContextProvider(contextProvider)
@@ -65,18 +67,16 @@ DisplayGLOutputSurface::DisplayGLOutputSurface(scoped_refptr<viz::VizProcessCont
 
 DisplayGLOutputSurface::~DisplayGLOutputSurface()
 {
+    unbind();
     m_vizContextProvider->SetUpdateVSyncParametersCallback(viz::UpdateVSyncParametersCallback());
     m_gl->DeleteFramebuffers(1, &m_fboId);
-    if (m_sink)
-        m_sink->disconnect(this);
 }
 
 // Called from viz::Display::Initialize.
 void DisplayGLOutputSurface::BindToClient(viz::OutputSurfaceClient *client)
 {
     m_display = static_cast<viz::Display *>(client);
-    m_sink = DisplayFrameSink::findOrCreate(m_display->frame_sink_id());
-    m_sink->connect(this);
+    bind(m_display->frame_sink_id());
 }
 
 // Triggered by ui::Compositor::SetVisible(true).
@@ -113,12 +113,13 @@ void DisplayGLOutputSurface::DiscardBackbuffer()
 void DisplayGLOutputSurface::Reshape(const gfx::Size &sizeInPixels,
                                      float devicePixelRatio,
                                      const gfx::ColorSpace &colorSpace,
-                                     bool hasAlpha,
+                                     gfx::BufferFormat format,
                                      bool /*useStencil*/)
 {
+    bool hasAlpha = gfx::AlphaBitsForBufferFormat(format) > 0;
     m_currentShape = Shape{sizeInPixels, devicePixelRatio, colorSpace, hasAlpha};
     m_gl->ResizeCHROMIUM(sizeInPixels.width(), sizeInPixels.height(), devicePixelRatio,
-                         gl::ColorSpaceUtils::GetGLColorSpace(colorSpace), hasAlpha);
+                         colorSpace.AsGLColorSpace(), hasAlpha);
 }
 
 std::unique_ptr<DisplayGLOutputSurface::Buffer> DisplayGLOutputSurface::makeBuffer(const Shape &shape)
@@ -211,9 +212,11 @@ void DisplayGLOutputSurface::swapBuffersOnGpuThread(unsigned int id, std::unique
         QMutexLocker locker(&m_mutex);
         m_middleBuffer->serviceId = id;
         m_middleBuffer->fence = CompositorResourceFence::create(std::move(fence));
+        m_readyToUpdate = true;
     }
 
-    m_sink->scheduleUpdate();
+    if (auto obs = observer())
+        obs->readyToSwap();
 }
 
 void DisplayGLOutputSurface::swapBuffersOnVizThread()
@@ -249,13 +252,6 @@ unsigned DisplayGLOutputSurface::GetOverlayTextureId() const
     return 0;
 }
 
-// Only used if IsDisplayedAsOverlayPlane was true (called from
-// viz::DirectRender::DrawFrame).
-gfx::BufferFormat DisplayGLOutputSurface::GetOverlayBufferFormat() const
-{
-    return gfx::BufferFormat();
-}
-
 // Called by viz::GLRenderer but always false in all implementations except for
 // android_webview::ParentOutputSurface.
 bool DisplayGLOutputSurface::HasExternalStencilTest() const
@@ -273,7 +269,7 @@ void DisplayGLOutputSurface::ApplyExternalStencil()
 // glCopyTexSubImage2D on our framebuffer.
 uint32_t DisplayGLOutputSurface::GetFramebufferCopyTextureFormat()
 {
-    return GL_RGBA;
+    return m_currentShape.hasAlpha ? GL_RGBA : GL_RGB;
 }
 
 // Called from viz::DirectRenderer::DrawFrame, only used for overlays.
@@ -281,6 +277,16 @@ unsigned DisplayGLOutputSurface::UpdateGpuFence()
 {
     NOTREACHED();
     return 0;
+}
+
+scoped_refptr<gpu::GpuTaskSchedulerHelper> DisplayGLOutputSurface::GetGpuTaskSchedulerHelper()
+{
+    return m_vizContextProvider->GetGpuTaskSchedulerHelper();
+}
+
+gpu::MemoryTracker *DisplayGLOutputSurface::GetMemoryTracker()
+{
+    return m_vizContextProvider->GetMemoryTracker();
 }
 
 void DisplayGLOutputSurface::SetUpdateVSyncParametersCallback(viz::UpdateVSyncParametersCallback callback)
@@ -295,6 +301,47 @@ void DisplayGLOutputSurface::SetDisplayTransformHint(gfx::OverlayTransform)
 gfx::OverlayTransform DisplayGLOutputSurface::GetDisplayTransform()
 {
     return gfx::OVERLAY_TRANSFORM_NONE;
+}
+
+void DisplayGLOutputSurface::swapFrame()
+{
+    QMutexLocker locker(&m_mutex);
+    if (m_readyToUpdate) {
+        std::swap(m_middleBuffer, m_frontBuffer);
+        m_taskRunner->PostTask(FROM_HERE,
+                               base::BindOnce(&DisplayGLOutputSurface::swapBuffersOnVizThread,
+                                              base::Unretained(this)));
+        m_taskRunner.reset();
+        m_readyToUpdate = false;
+    }
+}
+
+void DisplayGLOutputSurface::waitForTexture()
+{
+    if (m_frontBuffer && m_frontBuffer->fence) {
+        m_frontBuffer->fence->wait();
+        m_frontBuffer->fence.reset();
+    }
+}
+
+int DisplayGLOutputSurface::textureId()
+{
+    return m_frontBuffer ? m_frontBuffer->serviceId : 0;
+}
+
+QSize DisplayGLOutputSurface::size()
+{
+    return m_frontBuffer ? toQt(m_frontBuffer->shape.sizeInPixels) : QSize();
+}
+
+bool DisplayGLOutputSurface::hasAlphaChannel()
+{
+    return m_frontBuffer ? m_frontBuffer->shape.hasAlpha : false;
+}
+
+float DisplayGLOutputSurface::devicePixelRatio()
+{
+    return m_frontBuffer ? m_frontBuffer->shape.devicePixelRatio : 1;
 }
 
 } // namespace QtWebEngineCore

@@ -38,6 +38,7 @@
 #include <QtQml/QQmlEngine>
 #include <QtTest/QtTest>
 #include <QtWebEngine/QQuickWebEngineProfile>
+#include <QtWebEngine/QQuickWebEngineScriptCollection>
 #include <QtGui/private/qinputmethod_p.h>
 #include <QtWebEngine/private/qquickwebengineview_p.h>
 #include <QtWebEngine/private/qquickwebenginesettings_p.h>
@@ -584,7 +585,7 @@ void tst_QQuickWebEngineView::interruptImeTextComposition()
         QTest::mouseClick(view->window(), Qt::LeftButton, {}, textInputCenter);
     } else if (eventType == "Touch") {
         QPoint textInputCenter = elementCenter(view, QStringLiteral("input2"));
-        QTouchDevice *touchDevice = QTest::createTouchDevice();
+        QPointingDevice *touchDevice = QTest::createTouchDevice();
         QTest::touchEvent(view->window(), touchDevice).press(0, textInputCenter, view->window());
         QTest::touchEvent(view->window(), touchDevice).release(0, textInputCenter, view->window());
     }
@@ -975,9 +976,7 @@ void tst_QQuickWebEngineView::inputEventForwardingDisabledWhenActiveFocusOnPress
     QTest::mousePress(view->window(), Qt::LeftButton);
     QTest::mouseRelease(view->window(), Qt::LeftButton);
 
-    QTouchDevice *device = new QTouchDevice;
-    device->setType(QTouchDevice::TouchScreen);
-    QWindowSystemInterface::registerTouchDevice(device);
+    QPointingDevice *device = QTest::createTouchDevice();
 
     QTest::touchEvent(view->window(), device).press(0, QPoint(0,0), view->window());
     QTest::touchEvent(view->window(), device).move(0, QPoint(1, 1), view->window());
@@ -1037,10 +1036,10 @@ void tst_QQuickWebEngineView::userScripts()
     QScopedPointer<QQuickWebEngineView> webEngineView2(newWebEngineView());
     webEngineView2->setParentItem(m_window->contentItem());
 
-    QQmlListReference list(webEngineView1->profile(), "userScripts");
-    QQuickWebEngineScript script;
+    QQuickWebEngineScriptCollection *collection = webEngineView1->profile()->userScripts();
+    QWebEngineScript script;
     script.setSourceCode("document.title = 'New title';");
-    list.append(&script);
+    collection->insert(script);
 
     webEngineView1->setUrl(urlFromTestPath("html/basic_page.html"));
     QVERIFY(waitForLoadSucceeded(webEngineView1.data()));
@@ -1050,7 +1049,7 @@ void tst_QQuickWebEngineView::userScripts()
     QVERIFY(waitForLoadSucceeded(webEngineView2.data()));
     QTRY_COMPARE(webEngineView2->title(), QStringLiteral("New title"));
 
-    list.clear();
+    collection->clear();
 }
 
 void tst_QQuickWebEngineView::javascriptClipboard_data()
@@ -1164,17 +1163,17 @@ void tst_QQuickWebEngineView::setProfile() {
 void tst_QQuickWebEngineView::focusChild_data()
 {
     QTest::addColumn<QString>("interfaceName");
-    QTest::addColumn<QVector<QAccessible::Role>>("ancestorRoles");
+    QTest::addColumn<QList<QAccessible::Role>>("ancestorRoles");
 
-    QTest::newRow("QQuickWebEngineView") << QString("QQuickWebEngineView") << QVector<QAccessible::Role>({QAccessible::Client});
-    QTest::newRow("RenderWidgetHostViewQtDelegate") << QString("RenderWidgetHostViewQtDelegate") << QVector<QAccessible::Role>({QAccessible::Client});
-    QTest::newRow("QQuickView") << QString("QQuickView") << QVector<QAccessible::Role>({QAccessible::Window, QAccessible::Client /* view */});
+    QTest::newRow("QQuickWebEngineView") << QString("QQuickWebEngineView") << QList<QAccessible::Role>({QAccessible::Client});
+    QTest::newRow("RenderWidgetHostViewQtDelegate") << QString("RenderWidgetHostViewQtDelegate") << QList<QAccessible::Role>({QAccessible::Client});
+    QTest::newRow("QQuickView") << QString("QQuickView") << QList<QAccessible::Role>({QAccessible::Window, QAccessible::Client /* view */});
 }
 
 void tst_QQuickWebEngineView::focusChild()
 {
     auto traverseToWebDocumentAccessibleInterface = [](QAccessibleInterface *iface) -> QAccessibleInterface * {
-        QFETCH(QVector<QAccessible::Role>, ancestorRoles);
+        QFETCH(QList<QAccessible::Role>, ancestorRoles);
         for (int i = 0; i < ancestorRoles.size(); ++i) {
             if (iface->childCount() == 0 || iface->role() != ancestorRoles[i])
                 return nullptr;

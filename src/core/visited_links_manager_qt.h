@@ -55,12 +55,10 @@
 #include <QList>
 #include <QScopedPointer>
 
-QT_BEGIN_NAMESPACE
-class QUrl;
-QT_END_NAMESPACE
+QT_FORWARD_DECLARE_CLASS(QUrl)
 
 namespace visitedlink {
-class VisitedLinkMaster;
+class VisitedLinkWriter;
 }
 
 class GURL;
@@ -85,7 +83,7 @@ private:
     void addUrl(const GURL &);
     friend class WebContentsDelegateQt;
 
-    QScopedPointer<visitedlink::VisitedLinkMaster> m_visitedLinkMaster;
+    QScopedPointer<visitedlink::VisitedLinkWriter> m_visitedLinkWriter;
     QScopedPointer<VisitedLinkDelegateQt> m_delegate;
 };
 

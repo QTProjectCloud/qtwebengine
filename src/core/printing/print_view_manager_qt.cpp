@@ -102,7 +102,7 @@ static void SavePdfFile(scoped_refptr<base::RefCountedBytes> data,
     DCHECK_GT(data->size(), 0U);
 
     printing::MetafileSkia metafile;
-    metafile.InitFromData(static_cast<const void*>(data->front()), data->size());
+    metafile.InitFromData(base::as_bytes(base::make_span(data->front(), data->size())));
 
     base::File file(path,
                     base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
@@ -270,7 +270,7 @@ bool PrintViewManagerQt::PrintToPDFInternal(const QPageLayout &pageLayout,
         return false;
 
     content::RenderFrameHost* rfh = web_contents()->GetMainFrame();
-    GetPrintRenderFrame(rfh)->InitiatePrintPreview(nullptr, false);
+    GetPrintRenderFrame(rfh)->InitiatePrintPreview(mojo::PendingAssociatedRemote<printing::mojom::PrintRenderer>(), false);
 
     DCHECK(!m_printPreviewRfh);
     m_printPreviewRfh = rfh;
@@ -347,10 +347,11 @@ void PrintViewManagerQt::resetPdfState()
 // IPC handlers
 
 void PrintViewManagerQt::OnRequestPrintPreview(
-    const PrintHostMsg_RequestPrintPreview_Params &/*params*/)
+    const PrintHostMsg_RequestPrintPreview_Params & /*params*/)
 {
-    m_printPreviewRfh->Send(new PrintMsg_PrintPreview(m_printPreviewRfh->GetRoutingID(),
-                                                      *m_printSettings));
+    mojo::AssociatedRemote<printing::mojom::PrintRenderFrame> printRenderFrame;
+    m_printPreviewRfh->GetRemoteAssociatedInterfaces()->GetInterface(&printRenderFrame);
+    printRenderFrame->PrintPreview(m_printSettings->Clone());
     PrintPreviewDone();
 }
 

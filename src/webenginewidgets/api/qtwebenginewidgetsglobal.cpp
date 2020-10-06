@@ -41,6 +41,7 @@
 
 #include <QCoreApplication>
 #include <QOpenGLContext>
+#include <QQuickWindow>
 
 namespace QtWebEngineCore
 {
@@ -49,13 +50,13 @@ namespace QtWebEngineCore
 
 QT_BEGIN_NAMESPACE
 
-#ifndef QT_NO_OPENGL
+#if QT_CONFIG(opengl)
 Q_GUI_EXPORT QOpenGLContext *qt_gl_global_share_context();
 #endif
 
 static void initialize()
 {
-#ifndef QT_NO_OPENGL
+#if QT_CONFIG(opengl)
     if (QCoreApplication::instance()) {
         //On window/ANGLE, calling QtWebEngine::initialize from DllMain will result in a crash.
         if (!qt_gl_global_share_context()) {
@@ -67,7 +68,8 @@ static void initialize()
     }
     //QCoreApplication is not yet instantiated, ensuring the call will be deferred
     qAddPreRoutine(QtWebEngineCore::initialize);
-#endif // QT_NO_OPENGL
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGLRhi);
+#endif // QT_CONFIG(opengl)
 }
 
 Q_CONSTRUCTOR_FUNCTION(initialize)

@@ -132,8 +132,9 @@ void QQuickWebEngineClientCertificateOption::select()
     \sa {WebEngineView::selectClientCertificate}{WebEngineView.selectClientCertificate}
 */
 
-QQuickWebEngineClientCertificateSelection::QQuickWebEngineClientCertificateSelection(QSharedPointer<ClientCertSelectController> selectController)
-        : QObject(), d_ptr(selectController)
+QQuickWebEngineClientCertificateSelection::QQuickWebEngineClientCertificateSelection(
+        QSharedPointer<QtWebEngineCore::ClientCertSelectController> selectController)
+    : QObject(), d_ptr(selectController)
 {}
 
 int QQuickWebEngineClientCertificateSelection::certificates_count(
@@ -162,7 +163,7 @@ QQuickWebEngineClientCertificateOption *QQuickWebEngineClientCertificateSelectio
 QQmlListProperty<QQuickWebEngineClientCertificateOption> QQuickWebEngineClientCertificateSelection::certificates()
 {
     if (m_certificates.empty()) {
-        QVector<QSslCertificate> certificates = d_ptr->certificates();
+        QList<QSslCertificate> certificates = d_ptr->certificates();
         for (int i = 0; i < certificates.count(); ++i)
             m_certificates.push_back(new QQuickWebEngineClientCertificateOption(this, i));
     }

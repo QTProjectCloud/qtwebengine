@@ -52,30 +52,35 @@
 #include <QPolygonF>
 #include <QVariant>
 #include <QtQml/qqml.h>
+#include <QtQuick/qquickitem.h>
+
+#include "qquickpdfdocument_p.h"
 
 QT_BEGIN_NAMESPACE
+class QPdfSelection;
 
-class QQuickPdfDocument;
-
-class QQuickPdfSelection : public QObject
+class QQuickPdfSelection : public QQuickItem
 {
     Q_OBJECT
     Q_PROPERTY(QQuickPdfDocument *document READ document WRITE setDocument NOTIFY documentChanged)
     Q_PROPERTY(int page READ page WRITE setPage NOTIFY pageChanged)
+    Q_PROPERTY(qreal renderScale READ renderScale WRITE setRenderScale NOTIFY renderScaleChanged)
     Q_PROPERTY(QPointF fromPoint READ fromPoint WRITE setFromPoint NOTIFY fromPointChanged)
     Q_PROPERTY(QPointF toPoint READ toPoint WRITE setToPoint NOTIFY toPointChanged)
     Q_PROPERTY(bool hold READ hold WRITE setHold NOTIFY holdChanged)
 
     Q_PROPERTY(QString text READ text NOTIFY textChanged)
-    Q_PROPERTY(QVector<QPolygonF> geometry READ geometry NOTIFY geometryChanged)
+    Q_PROPERTY(QList<QPolygonF> geometry READ geometry NOTIFY selectedAreaChanged)
 
 public:
-    explicit QQuickPdfSelection(QObject *parent = nullptr);
+    explicit QQuickPdfSelection(QQuickItem *parent = nullptr);
 
     QQuickPdfDocument *document() const;
     void setDocument(QQuickPdfDocument * document);
     int page() const;
     void setPage(int page);
+    qreal renderScale() const;
+    void setRenderScale(qreal scale);
     QPointF fromPoint() const;
     void setFromPoint(QPointF fromPoint);
     QPointF toPoint() const;
@@ -84,8 +89,10 @@ public:
     void setHold(bool hold);
 
     QString text() const;
-    QVector<QPolygonF> geometry() const;
+    QList<QPolygonF> geometry() const;
 
+    Q_INVOKABLE void clear();
+    Q_INVOKABLE void selectAll();
 #if QT_CONFIG(clipboard)
     Q_INVOKABLE void copyToClipboard() const;
 #endif
@@ -93,24 +100,43 @@ public:
 signals:
     void documentChanged();
     void pageChanged();
+    void renderScaleChanged();
     void fromPointChanged();
     void toPointChanged();
     void holdChanged();
     void textChanged();
-    void geometryChanged();
+    void selectedAreaChanged();
+
+protected:
+#if QT_CONFIG(im)
+    void keyReleaseEvent(QKeyEvent *ev) override;
+    void inputMethodEvent(QInputMethodEvent *event) override;
+    Q_INVOKABLE QVariant inputMethodQuery(Qt::InputMethodQuery query, const QVariant &argument) const;
+    QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
+#endif
 
 private:
     void resetPoints();
     void updateResults();
+    void update(const QPdfSelection &sel, bool textAndGeometryOnly = false);
+    const QString &pageText() const;
 
 private:
     QQuickPdfDocument *m_document = nullptr;
+    mutable QPointF m_hitPoint;
     QPointF m_fromPoint;
-    QPointF m_toPoint;
-    QString m_text;
-    QVector<QPolygonF> m_geometry;
+    mutable QPointF m_toPoint;
+    qreal m_renderScale = 1;
+    mutable qreal m_heightAtAnchor = 0;
+    mutable qreal m_heightAtCursor = 0;
+    QString m_text;             // selected text
+    mutable QString m_pageText; // all text on the page
+    QList<QPolygonF> m_geometry;
     int m_page = 0;
+    int m_fromCharIndex = -1;   // same as anchor position
+    mutable int m_toCharIndex = -1; // same as cursor position
     bool m_hold = false;
+    mutable bool m_pageTextDirty = true;
 
     Q_DISABLE_COPY(QQuickPdfSelection)
 };
@@ -118,5 +144,5 @@ private:
 QT_END_NAMESPACE
 
 QML_DECLARE_TYPE(QQuickPdfSelection)
-\
+
 #endif // QQUICKPDFSELECTION_P_H

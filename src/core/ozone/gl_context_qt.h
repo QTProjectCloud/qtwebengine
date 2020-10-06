@@ -65,11 +65,14 @@ public:
     static QFunctionPointer getGlXGetProcAddress();
     static QFunctionPointer getEglGetProcAddress();
     static bool isCreateContextRobustnessSupported();
+    static void *getGlxPlatformInterface();
+    static void *getEglPlatformInterface();
 
 private:
     Q_INVOKABLE bool initializeContextOnBrowserThread(gl::GLContext* context, gl::GLSurface* surface, gl::GLContextAttribs attribs);
 
     static GLContextHelper* contextHelper;
+    bool m_robustness = false;
 };
 
 QT_END_NAMESPACE

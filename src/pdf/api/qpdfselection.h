@@ -38,10 +38,11 @@
 #define QPDFSELECTION_H
 
 #include <QtPdf/qtpdfglobal.h>
-#include <QClipboard>
-#include <QExplicitlySharedDataPointer>
-#include <QObject>
-#include <QPolygonF>
+
+#include <QtCore/qobject.h>
+#include <QtCore/qshareddata.h>
+#include <QtGui/qclipboard.h>
+#include <QtGui/qpolygon.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -51,25 +52,32 @@ class Q_PDF_EXPORT QPdfSelection
 {
     Q_GADGET
     Q_PROPERTY(bool valid READ isValid)
-    Q_PROPERTY(QVector<QPolygonF> bounds READ bounds)
+    Q_PROPERTY(QList<QPolygonF> bounds READ bounds)
+    Q_PROPERTY(QRectF boundingRectangle READ boundingRectangle)
     Q_PROPERTY(QString text READ text)
+    Q_PROPERTY(int startIndex READ startIndex)
+    Q_PROPERTY(int endIndex READ endIndex)
 
 public:
-    QPdfSelection(const QPdfSelection &other);
     ~QPdfSelection();
+    QPdfSelection(const QPdfSelection &other);
     QPdfSelection &operator=(const QPdfSelection &other);
-    inline QPdfSelection &operator=(QPdfSelection &&other) noexcept { swap(other); return *this; }
+    QPdfSelection(QPdfSelection &&other) noexcept;
+    QPdfSelection &operator=(QPdfSelection &&other) noexcept { swap(other); return *this; }
     void swap(QPdfSelection &other) noexcept { d.swap(other.d); }
     bool isValid() const;
-    QVector<QPolygonF> bounds() const;
+    QList<QPolygonF> bounds() const;
     QString text() const;
+    QRectF boundingRectangle() const;
+    int startIndex() const;
+    int endIndex() const;
 #if QT_CONFIG(clipboard)
     void copyToClipboard(QClipboard::Mode mode = QClipboard::Clipboard) const;
 #endif
 
 private:
     QPdfSelection();
-    QPdfSelection(const QString &text, QVector<QPolygonF> bounds);
+    QPdfSelection(const QString &text, QList<QPolygonF> bounds, QRectF boundingRect, int startIndex, int endIndex);
     QPdfSelection(QPdfSelectionPrivate *d);
     friend class QPdfDocument;
     friend class QQuickPdfSelection;

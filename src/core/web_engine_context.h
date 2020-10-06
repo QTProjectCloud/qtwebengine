@@ -46,7 +46,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
 
-#include <QVector>
+#include <QtGui/qtgui-config.h>
+#include <QList>
 
 namespace base {
 class RunLoop;
@@ -122,13 +123,15 @@ public:
 
     static gpu::SyncPointManager *syncPointManager();
 
+    static bool isGpuServiceOnUIThread();
+
 private:
     friend class base::RefCounted<WebEngineContext>;
     friend class ProfileAdapter;
     WebEngineContext();
     ~WebEngineContext();
 
-    static void registerMainThreadFactories(bool threaded);
+    static void registerMainThreadFactories();
     static void destroyGpuProcess();
 
     std::unique_ptr<base::RunLoop> m_runLoop;
@@ -141,8 +144,8 @@ private:
     std::unique_ptr<QObject> m_globalQObject;
     std::unique_ptr<ProfileAdapter> m_defaultProfileAdapter;
     std::unique_ptr<DevToolsServerQt> m_devtoolsServer;
-    QVector<ProfileAdapter*> m_profileAdapters;
-#ifndef QT_NO_ACCESSIBILITY
+    QList<ProfileAdapter*> m_profileAdapters;
+#if QT_CONFIG(accessibility)
     std::unique_ptr<AccessibilityActivationObserver> m_accessibilityActivationObserver;
 #endif
 

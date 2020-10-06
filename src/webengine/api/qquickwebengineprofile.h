@@ -40,25 +40,23 @@
 #ifndef QQUICKWEBENGINEPROFILE_H
 #define QQUICKWEBENGINEPROFILE_H
 
-
 #include <QtWebEngine/qtwebengineglobal.h>
-
 #include <QtCore/QObject>
 #include <QtCore/QScopedPointer>
 #include <QtCore/QString>
-#include <QtQml/QQmlListProperty>
 
 QT_BEGIN_NAMESPACE
 
-class QQuickWebEngineDownloadItem;
-class QQuickWebEngineProfilePrivate;
-class QQuickWebEngineScript;
+class QWebEngineDownloadRequest;
+class QWebEngineScript;
 class QQuickWebEngineSettings;
 class QWebEngineClientCertificateStore;
 class QWebEngineCookieStore;
 class QWebEngineNotification;
 class QWebEngineUrlRequestInterceptor;
 class QWebEngineUrlSchemeHandler;
+class QQuickWebEngineScriptCollection;
+class QQuickWebEngineProfilePrivate;
 
 class Q_WEBENGINE_EXPORT QQuickWebEngineProfile : public QObject {
     Q_OBJECT
@@ -73,7 +71,7 @@ class Q_WEBENGINE_EXPORT QQuickWebEngineProfile : public QObject {
     Q_PROPERTY(int httpCacheMaximumSize READ httpCacheMaximumSize WRITE setHttpCacheMaximumSize NOTIFY httpCacheMaximumSizeChanged FINAL)
     Q_PROPERTY(QStringList spellCheckLanguages READ spellCheckLanguages WRITE setSpellCheckLanguages NOTIFY spellCheckLanguagesChanged FINAL REVISION 3)
     Q_PROPERTY(bool spellCheckEnabled READ isSpellCheckEnabled WRITE setSpellCheckEnabled NOTIFY spellCheckEnabledChanged FINAL REVISION 3)
-    Q_PROPERTY(QQmlListProperty<QQuickWebEngineScript> userScripts READ userScripts FINAL REVISION 4)
+    Q_PROPERTY(QQuickWebEngineScriptCollection *userScripts READ userScripts)
     Q_PROPERTY(bool useForGlobalCertificateVerification
                READ isUsedForGlobalCertificateVerification
                WRITE setUseForGlobalCertificateVerification
@@ -146,7 +144,7 @@ public:
     void setSpellCheckEnabled(bool enabled);
     bool isSpellCheckEnabled() const;
 
-    QQmlListProperty<QQuickWebEngineScript> userScripts();
+    QQuickWebEngineScriptCollection *userScripts() const;
 
     void setUseForGlobalCertificateVerification(bool b);
     bool isUsedForGlobalCertificateVerification() const;
@@ -172,9 +170,8 @@ Q_SIGNALS:
     Q_REVISION(3) void spellCheckEnabledChanged();
     Q_REVISION(5) void useForGlobalCertificateVerificationChanged();
     Q_REVISION(5) void downloadPathChanged();
-
-    void downloadRequested(QQuickWebEngineDownloadItem *download);
-    void downloadFinished(QQuickWebEngineDownloadItem *download);
+    void downloadRequested(QWebEngineDownloadRequest *download);
+    void downloadFinished(QWebEngineDownloadRequest *download);
 
     Q_REVISION(5) void presentNotification(QWebEngineNotification *notification);
 
@@ -186,8 +183,6 @@ private:
     friend class QQuickWebEngineSettings;
     friend class QQuickWebEngineSingleton;
     friend class QQuickWebEngineViewPrivate;
-    friend class QQuickWebEngineDownloadItem;
-    friend class QQuickWebEngineDownloadItemPrivate;
     friend class QQuickWebEngineView;
     QScopedPointer<QQuickWebEngineProfilePrivate> d_ptr;
 };

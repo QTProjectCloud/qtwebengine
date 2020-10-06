@@ -43,8 +43,7 @@
 #include "qtwebenginecoreglobal.h"
 
 #include "content/public/browser/web_contents_observer.h"
-#include "services/service_manager/public/cpp/binder_registry.h"
-#include "content/public/browser/web_contents_binding_set.h"
+#include "content/public/browser/web_contents_receiver_set.h"
 #include "qtwebengine/browser/qtwebchannel.mojom.h"
 
 #include <QWebChannelAbstractTransport>
@@ -71,18 +70,17 @@ public:
 private:
     void setWorldId(content::RenderFrameHost *frame, uint32_t worldId);
     void resetWorldId();
-    void onWebChannelMessage(const std::vector<char> &message);
 
     // WebContentsObserver
     void RenderFrameCreated(content::RenderFrameHost *frame) override;
 
     // qtwebchannel::mojom::WebChannelTransportHost
-    void DispatchWebChannelMessage(const std::vector<uint8_t> &binaryJson) override;
+    void DispatchWebChannelMessage(const std::vector<uint8_t> &json) override;
 
     // Empty only during construction/destruction. Synchronized to all the
     // WebChannelIPCTransports/RenderFrames in the observed WebContents.
     uint32_t m_worldId;
-    content::WebContentsFrameBindingSet<qtwebchannel::mojom::WebChannelTransportHost> m_binding;
+    content::WebContentsFrameReceiverSet<qtwebchannel::mojom::WebChannelTransportHost> m_receiver;
 };
 
 } // namespace

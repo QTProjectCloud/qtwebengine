@@ -38,7 +38,6 @@
 
 #include <private/qobject_p.h>
 #include <QMutex>
-#include <QPdfDocument>
 #include <QPointer>
 #include <QThread>
 
@@ -67,10 +66,8 @@ private:
     QMutex m_mutex;
 };
 
-class QPdfPageRendererPrivate : public QObjectPrivate
+class QPdfPageRendererPrivate
 {
-    Q_DECLARE_PUBLIC(QPdfPageRenderer)
-
 public:
     QPdfPageRendererPrivate();
     ~QPdfPageRendererPrivate();
@@ -79,7 +76,7 @@ public:
     void requestFinished(int page, QSize imageSize, const QImage &image,
                          QPdfDocumentRenderOptions options, quint64 requestId);
 
-    QPdfPageRenderer::RenderMode m_renderMode = QPdfPageRenderer::SingleThreadedRenderMode;
+    QPdfPageRenderer::RenderMode m_renderMode = QPdfPageRenderer::RenderMode::SingleThreaded;
     QPointer<QPdfDocument> m_document;
 
     struct PageRequest
@@ -90,8 +87,8 @@ public:
         QPdfDocumentRenderOptions options;
     };
 
-    QVector<PageRequest> m_requests;
-    QVector<PageRequest> m_pendingRequests;
+    QList<PageRequest> m_requests;
+    QList<PageRequest> m_pendingRequests;
     quint64 m_requestIdCounter = 1;
 
     QThread *m_renderThread = nullptr;
@@ -133,12 +130,7 @@ void RenderWorker::requestPage(quint64 requestId, int pageNumber, QSize imageSiz
     emit pageRendered(pageNumber, imageSize, image, options, requestId);
 }
 
-
-QPdfPageRendererPrivate::QPdfPageRendererPrivate()
-    : QObjectPrivate()
-    , m_renderWorker(new RenderWorker)
-{
-}
+QPdfPageRendererPrivate::QPdfPageRendererPrivate() : m_renderWorker(new RenderWorker) { }
 
 QPdfPageRendererPrivate::~QPdfPageRendererPrivate()
 {
@@ -164,6 +156,8 @@ void QPdfPageRendererPrivate::handleNextRequest()
 
 void QPdfPageRendererPrivate::requestFinished(int page, QSize imageSize, const QImage &image, QPdfDocumentRenderOptions options, quint64 requestId)
 {
+    Q_UNUSED(image);
+    Q_UNUSED(requestId);
     const auto it = std::find_if(m_pendingRequests.begin(), m_pendingRequests.end(),
                                  [page, imageSize, options](const PageRequest &request){ return request.pageNumber == page && request.imageSize == imageSize && request.options == options; });
 
@@ -180,8 +174,8 @@ void QPdfPageRendererPrivate::requestFinished(int page, QSize imageSize, const Q
 
     The QPdfPageRenderer contains a queue that collects all render requests that are invoked through
     requestPage(). Depending on the configured RenderMode the QPdfPageRenderer processes this queue
-    in the main UI thread on next event loop invocation (SingleThreadedRenderMode) or in a separate worker thread
-    (MultiThreadedRenderMode) and emits the result through the pageRendered() signal for each request once
+    in the main UI thread on next event loop invocation (\c RenderMode::SingleThreaded) or in a separate worker thread
+    (\c RenderMode::MultiThreaded) and emits the result through the pageRendered() signal for each request once
     the rendering is done.
 
     \sa QPdfDocument
@@ -192,18 +186,17 @@ void QPdfPageRendererPrivate::requestFinished(int page, QSize imageSize, const Q
     Constructs a page renderer object with parent object \a parent.
 */
 QPdfPageRenderer::QPdfPageRenderer(QObject *parent)
-    : QObject(*new QPdfPageRendererPrivate(), parent)
+    : QObject(parent), d_ptr(new QPdfPageRendererPrivate)
 {
-    Q_D(QPdfPageRenderer);
-
     qRegisterMetaType<QPdfDocumentRenderOptions>();
 
-    connect(d->m_renderWorker.data(), &RenderWorker::pageRendered, this,
-            [this,d](int page, QSize imageSize, const QImage &image, QPdfDocumentRenderOptions options, quint64 requestId) {
-                d->requestFinished(page, imageSize, image, options, requestId);
+    connect(d_ptr->m_renderWorker.data(), &RenderWorker::pageRendered, this,
+            [this](int page, QSize imageSize, const QImage &image,
+                   QPdfDocumentRenderOptions options, quint64 requestId) {
+                d_ptr->requestFinished(page, imageSize, image, options, requestId);
                 emit pageRendered(page, imageSize, image, options, requestId);
-                d->handleNextRequest();
-           });
+                d_ptr->handleNextRequest();
+            });
 }
 
 /*!
@@ -218,8 +211,8 @@ QPdfPageRenderer::~QPdfPageRenderer()
 
     This enum describes how the pages are rendered.
 
-    \value MultiThreadedRenderMode All pages are rendered in a separate worker thread.
-    \value SingleThreadedRenderMode All pages are rendered in the main UI thread (default).
+    \value MultiThreaded All pages are rendered in a separate worker thread.
+    \value SingleThreaded All pages are rendered in the main UI thread (default).
 
     \sa renderMode(), setRenderMode()
 */
@@ -228,7 +221,7 @@ QPdfPageRenderer::~QPdfPageRenderer()
     \property QPdfPageRenderer::renderMode
     \brief The mode the renderer uses to render the pages.
 
-    By default, this property is \c QPdfPageRenderer::SingleThreaded.
+    By default, this property is \c RenderMode::SingleThreaded.
 
     \sa setRenderMode(), RenderMode
 */
@@ -240,9 +233,7 @@ QPdfPageRenderer::~QPdfPageRenderer()
 */
 QPdfPageRenderer::RenderMode QPdfPageRenderer::renderMode() const
 {
-    Q_D(const QPdfPageRenderer);
-
-    return d->m_renderMode;
+    return d_ptr->m_renderMode;
 }
 
 /*!
@@ -252,26 +243,24 @@ QPdfPageRenderer::RenderMode QPdfPageRenderer::renderMode() const
 */
 void QPdfPageRenderer::setRenderMode(RenderMode mode)
 {
-    Q_D(QPdfPageRenderer);
-
-    if (d->m_renderMode == mode)
+    if (d_ptr->m_renderMode == mode)
         return;
 
-    d->m_renderMode = mode;
-    emit renderModeChanged(d->m_renderMode);
+    d_ptr->m_renderMode = mode;
+    emit renderModeChanged(d_ptr->m_renderMode);
 
-    if (d->m_renderMode == MultiThreadedRenderMode) {
-        d->m_renderThread = new QThread;
-        d->m_renderWorker->moveToThread(d->m_renderThread);
-        d->m_renderThread->start();
+    if (d_ptr->m_renderMode == RenderMode::MultiThreaded) {
+        d_ptr->m_renderThread = new QThread;
+        d_ptr->m_renderWorker->moveToThread(d_ptr->m_renderThread);
+        d_ptr->m_renderThread->start();
     } else {
-        d->m_renderThread->quit();
-        d->m_renderThread->wait();
-        delete d->m_renderThread;
-        d->m_renderThread = nullptr;
+        d_ptr->m_renderThread->quit();
+        d_ptr->m_renderThread->wait();
+        delete d_ptr->m_renderThread;
+        d_ptr->m_renderThread = nullptr;
 
         // pulling the object from another thread should be fine, once that thread is deleted
-        d->m_renderWorker->moveToThread(this->thread());
+        d_ptr->m_renderWorker->moveToThread(this->thread());
     }
 }
 
@@ -292,9 +281,7 @@ void QPdfPageRenderer::setRenderMode(RenderMode mode)
 */
 QPdfDocument* QPdfPageRenderer::document() const
 {
-    Q_D(const QPdfPageRenderer);
-
-    return d->m_document;
+    return d_ptr->m_document;
 }
 
 /*!
@@ -304,15 +291,13 @@ QPdfDocument* QPdfPageRenderer::document() const
 */
 void QPdfPageRenderer::setDocument(QPdfDocument *document)
 {
-    Q_D(QPdfPageRenderer);
-
-    if (d->m_document == document)
+    if (d_ptr->m_document == document)
         return;
 
-    d->m_document = document;
-    emit documentChanged(d->m_document);
+    d_ptr->m_document = document;
+    emit documentChanged(d_ptr->m_document);
 
-    d->m_renderWorker->setDocument(d->m_document);
+    d_ptr->m_renderWorker->setDocument(d_ptr->m_document);
 }
 
 /*!
@@ -327,19 +312,17 @@ void QPdfPageRenderer::setDocument(QPdfDocument *document)
 quint64 QPdfPageRenderer::requestPage(int pageNumber, QSize imageSize,
                                       QPdfDocumentRenderOptions options)
 {
-    Q_D(QPdfPageRenderer);
-
-    if (!d->m_document || d->m_document->status() != QPdfDocument::Ready)
+    if (!d_ptr->m_document || d_ptr->m_document->status() != QPdfDocument::Ready)
         return 0;
 
-    for (const auto request : qAsConst(d->m_pendingRequests)) {
+    for (const auto &request : qAsConst(d_ptr->m_pendingRequests)) {
         if (request.pageNumber == pageNumber
             && request.imageSize == imageSize
             && request.options == options)
             return request.id;
     }
 
-    const auto id = d->m_requestIdCounter++;
+    const auto id = d_ptr->m_requestIdCounter++;
 
     QPdfPageRendererPrivate::PageRequest request;
     request.id = id;
@@ -347,9 +330,9 @@ quint64 QPdfPageRenderer::requestPage(int pageNumber, QSize imageSize,
     request.imageSize = imageSize;
     request.options = options;
 
-    d->m_requests.append(request);
+    d_ptr->m_requests.append(request);
 
-    d->handleNextRequest();
+    d_ptr->handleNextRequest();
 
     return id;
 }

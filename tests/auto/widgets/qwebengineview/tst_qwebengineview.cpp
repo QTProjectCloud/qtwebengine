@@ -29,8 +29,9 @@
 #include <qwebengineview.h>
 #include <qwebenginepage.h>
 #include <qwebenginesettings.h>
-#include <qnetworkrequest.h>
+#include <qaction.h>
 #include <qdiriterator.h>
+#include <qnetworkrequest.h>
 #include <qstackedlayout.h>
 #include <qtemporarydir.h>
 #include <QClipboard>
@@ -45,7 +46,6 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QStyle>
-#include <QtWidgets/qaction.h>
 #include <QWebEngineProfile>
 #include <QtCore/qregularexpression.h>
 
@@ -60,7 +60,7 @@ do { \
     QCOMPARE((__expr), __expected); \
 } while (0)
 
-static QTouchDevice* s_touchDevice = nullptr;
+static QPointingDevice* s_touchDevice = nullptr;
 
 static QPoint elementCenter(QWebEnginePage *page, const QString &id)
 {
@@ -350,7 +350,7 @@ void tst_QWebEngineView::changePage()
     if (!fromIsNullPage) {
         QVERIFY(!pageFrom->iconUrl().isEmpty());
         QCOMPARE(spyIconUrl.last().value(0).toUrl(), pageFrom->iconUrl());
-        QCOMPARE(spyIcon.last().value(0), QVariant::fromValue(pageFrom->icon()));
+        QCOMPARE(spyIcon.last().value(0).value<QIcon>(), pageFrom->icon());
     }
 
     QScopedPointer<QWebEnginePage> pageTo(new QWebEnginePage);
@@ -379,7 +379,7 @@ void tst_QWebEngineView::changePage()
     QCOMPARE(pageFrom->iconUrl() == pageTo->iconUrl(), iconIsSame);
     if (!iconIsSame) {
         QCOMPARE(spyIconUrl.last().value(0).toUrl(), pageTo->iconUrl());
-        QCOMPARE(spyIcon.last().value(0), QVariant::fromValue(pageTo->icon()));
+        QCOMPARE(spyIcon.last().value(0).value<QIcon>(), pageTo->icon());
     }
 
     // verify no emits on destroy with the same number of signals in spy
@@ -961,7 +961,7 @@ public:
 
 private:
     int m_eventCounter;
-    QVector<QString> m_eventHistory;
+    QList<QString> m_eventHistory;
 };
 
 void tst_QWebEngineView::doNotSendMouseKeyboardEventsWhenDisabled()
