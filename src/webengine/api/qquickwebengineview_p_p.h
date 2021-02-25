@@ -117,7 +117,8 @@ public:
     void loadStarted(const QUrl &provisionalUrl, bool isErrorPage = false) override;
     void loadCommitted() override;
     void didFirstVisuallyNonEmptyPaint() override;
-    void loadFinished(bool success, const QUrl &url, bool isErrorPage = false, int errorCode = 0, const QString &errorDescription = QString()) override;
+    void loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode,
+                      const QString &errorDescription, bool triggersErrorPage) override;
     void focusContainer() override;
     void unhandledKeyEvent(QKeyEvent *event) override;
     QSharedPointer<QtWebEngineCore::WebContentsAdapter>
@@ -158,9 +159,7 @@ public:
     void updateContentsSize(const QSizeF &size) override;
     void updateNavigationActions() override;
     void updateEditActions() override;
-    void startDragging(const content::DropData &dropData, Qt::DropActions allowedActions,
-                       const QPixmap &pixmap, const QPoint &offset) override;
-    bool supportsDragging() const override;
+    QObject *dragSource() const override;
     bool isEnabled() const override;
     void setToolTip(const QString &toolTipText) override;
     QtWebEngineCore::TouchHandleDrawableClient *createTouchHandle(const QMap<int, QImage> &images) override;
@@ -172,7 +171,6 @@ public:
     QtWebEngineCore::ProfileAdapter *profileAdapter() override;
     QtWebEngineCore::WebContentsAdapter *webContentsAdapter() override;
     void printRequested() override;
-    void widgetChanged(QtWebEngineCore::RenderWidgetHostViewQtDelegate *newWidgetBase) override;
     void findTextFinished(const QWebEngineFindTextResult &result) override;
 
     void didCompositorFrameSwap();

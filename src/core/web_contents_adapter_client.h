@@ -195,7 +195,8 @@ public:
     virtual void loadStarted(const QUrl &provisionalUrl, bool isErrorPage = false) = 0;
     virtual void loadCommitted() = 0;
     virtual void didFirstVisuallyNonEmptyPaint() = 0;
-    virtual void loadFinished(bool success, const QUrl &url, bool isErrorPage = false, int errorCode = 0, const QString &errorDescription = QString()) = 0;
+    virtual void loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode,
+                              const QString &errorDescription, bool triggersErrorPage) = 0;
     virtual void focusContainer() = 0;
     virtual void unhandledKeyEvent(QKeyEvent *event) = 0;
     virtual QSharedPointer<WebContentsAdapter>
@@ -238,15 +239,12 @@ public:
     virtual void updateContentsSize(const QSizeF &size) = 0;
     virtual void updateNavigationActions() = 0;
     virtual void updateEditActions() = 0;
-    virtual void startDragging(const content::DropData &dropData, Qt::DropActions allowedActions,
-                               const QPixmap &pixmap, const QPoint &offset) = 0;
-    virtual bool supportsDragging() const = 0;
+    virtual QObject *dragSource() const = 0;
     virtual bool isEnabled() const = 0;
     virtual const QObject *holdingQObject() const = 0;
     virtual void setToolTip(const QString& toolTipText) = 0;
     virtual ClientType clientType() = 0;
     virtual void printRequested() = 0;
-    virtual void widgetChanged(RenderWidgetHostViewQtDelegate *newWidget) = 0;
     virtual TouchHandleDrawableClient *createTouchHandle(const QMap<int, QImage> &images) = 0;
     virtual void showTouchSelectionMenu(TouchSelectionMenuController *menuController, const QRect &bounds, const QSize &handleSize) = 0;
     virtual void hideTouchSelectionMenu() = 0;

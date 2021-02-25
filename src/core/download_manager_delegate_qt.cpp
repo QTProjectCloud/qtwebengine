@@ -94,6 +94,7 @@ void DownloadManagerDelegateQt::cancelDownload(content::DownloadTargetCallback c
                             download::DownloadDangerType::DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT,
                             download::DownloadItem::UNKNOWN,
                             base::FilePath(),
+                            base::nullopt,
                             download::DownloadInterruptReason::DOWNLOAD_INTERRUPT_REASON_USER_CANCELED);
 }
 
@@ -134,6 +135,7 @@ bool DownloadManagerDelegateQt::DetermineDownloadTarget(download::DownloadItem *
                                  download::DownloadDangerType::DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
                                  download::DownloadItem::VALIDATED,
                                  item->GetForcedFilePath(),
+                                 base::nullopt,
                                  download::DownloadInterruptReason::DOWNLOAD_INTERRUPT_REASON_NONE);
         return true;
     }
@@ -148,8 +150,11 @@ bool DownloadManagerDelegateQt::DetermineDownloadTarget(download::DownloadItem *
     if (suggestedFilename.isEmpty())
         suggestedFilename = toQt(item->GetTargetFilePath().AsUTF8Unsafe());
 
-    if (suggestedFilename.isEmpty())
-        suggestedFilename = QUrl::fromPercentEncoding(toQByteArray(item->GetURL().ExtractFileName()));
+    if (suggestedFilename.isEmpty()) {
+        GURL itemUrl = item->GetURL();
+        if (!itemUrl.SchemeIs("about") && !itemUrl.SchemeIs("data"))
+            suggestedFilename = QUrl::fromPercentEncoding(toQByteArray(itemUrl.ExtractFileName()));
+    }
 
     if (suggestedFilename.isEmpty()) {
         suggestedFilename = QStringLiteral("qwe_download");
@@ -214,6 +219,7 @@ bool DownloadManagerDelegateQt::DetermineDownloadTarget(download::DownloadItem *
                                  download::DownloadDangerType::DOWNLOAD_DANGER_TYPE_MAYBE_DANGEROUS_CONTENT,
                                  download::DownloadItem::VALIDATED,
                                  filePathForCallback.AddExtension(toFilePathString("download")),
+                                 base::nullopt,
                                  download::DownloadInterruptReason::DOWNLOAD_INTERRUPT_REASON_NONE);
     } else
         cancelDownload(std::move(*callback));

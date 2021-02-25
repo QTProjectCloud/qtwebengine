@@ -49,9 +49,9 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/web_preferences.h"
 #include "media/base/media_switches.h"
 #include "third_party/blink/public/common/peerconnection/webrtc_ip_handling_policy.h"
+#include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/events/event_switches.h"
@@ -112,12 +112,11 @@ WebEngineSettings::~WebEngineSettings()
     if (parentSettings)
         parentSettings->childSettings.remove(this);
     // In QML the profile and its settings may be garbage collected before the page and its settings.
-    for (WebEngineSettings *settings : qAsConst(childSettings)) {
-        settings->parentSettings = 0;
-    }
+    for (WebEngineSettings *settings : qAsConst(childSettings))
+        settings->parentSettings = nullptr;
 }
 
-void WebEngineSettings::overrideWebPreferences(content::WebContents *webContents, content::WebPreferences *prefs)
+void WebEngineSettings::overrideWebPreferences(content::WebContents *webContents, blink::web_pref::WebPreferences *prefs)
 {
     // Apply our settings on top of those.
     applySettingsToWebPreferences(prefs);
@@ -125,7 +124,7 @@ void WebEngineSettings::overrideWebPreferences(content::WebContents *webContents
     // as the host process already overides some of the default WebPreferences values
     // before we get here (e.g. number_of_cpu_cores).
     if (webPreferences.isNull())
-        webPreferences.reset(new content::WebPreferences(*prefs));
+        webPreferences.reset(new blink::web_pref::WebPreferences(*prefs));
 
     if (webContents
             && applySettingsToRendererPreferences(webContents->GetMutableRendererPrefs())) {
@@ -141,11 +140,15 @@ void WebEngineSettings::setAttribute(QWebEngineSettings::WebAttribute attr, bool
 
 bool WebEngineSettings::testAttribute(QWebEngineSettings::WebAttribute attr) const
 {
-    if (!parentSettings) {
-        Q_ASSERT(s_defaultAttributes.contains(attr));
-        return m_attributes.value(attr, s_defaultAttributes.value(attr));
-    }
-    return m_attributes.value(attr, parentSettings->testAttribute(attr));
+    auto it = m_attributes.constFind(attr);
+    if (it != m_attributes.constEnd())
+        return *it;
+
+    if (parentSettings)
+        return parentSettings->testAttribute(attr);
+
+    Q_ASSERT(s_defaultAttributes.contains(attr));
+    return s_defaultAttributes.value(attr);
 }
 
 bool WebEngineSettings::isAttributeExplicitlySet(QWebEngineSettings::WebAttribute attr) const
@@ -349,7 +352,7 @@ void WebEngineSettings::doApply()
         m_adapter->webContents()->SyncRendererPrefs();
 }
 
-void WebEngineSettings::applySettingsToWebPreferences(content::WebPreferences *prefs)
+void WebEngineSettings::applySettingsToWebPreferences(blink::web_pref::WebPreferences *prefs)
 {
     // Override for now
     prefs->touch_event_feature_detection_enabled = isTouchEventsAPIEnabled();
@@ -393,26 +396,26 @@ void WebEngineSettings::applySettingsToWebPreferences(content::WebPreferences *p
     prefs->hide_scrollbars = !testAttribute(QWebEngineSettings::ShowScrollBars);
     if (isAttributeExplicitlySet(QWebEngineSettings::PlaybackRequiresUserGesture)) {
         prefs->autoplay_policy = testAttribute(QWebEngineSettings::PlaybackRequiresUserGesture)
-                ? content::AutoplayPolicy::kUserGestureRequired
-                : content::AutoplayPolicy::kNoUserGestureRequired;
+                               ? blink::web_pref::AutoplayPolicy::kUserGestureRequired
+                               : blink::web_pref::AutoplayPolicy::kNoUserGestureRequired;
     }
     prefs->dom_paste_enabled = testAttribute(QWebEngineSettings::JavascriptCanPaste);
     prefs->dns_prefetching_enabled = testAttribute(QWebEngineSettings::DnsPrefetchEnabled);
 
     // Fonts settings.
-    prefs->standard_font_family_map[content::kCommonScript] =
+    prefs->standard_font_family_map[blink::web_pref::kCommonScript] =
             toString16(fontFamily(QWebEngineSettings::StandardFont));
-    prefs->fixed_font_family_map[content::kCommonScript] =
+    prefs->fixed_font_family_map[blink::web_pref::kCommonScript] =
             toString16(fontFamily(QWebEngineSettings::FixedFont));
-    prefs->serif_font_family_map[content::kCommonScript] =
+    prefs->serif_font_family_map[blink::web_pref::kCommonScript] =
             toString16(fontFamily(QWebEngineSettings::SerifFont));
-    prefs->sans_serif_font_family_map[content::kCommonScript] =
+    prefs->sans_serif_font_family_map[blink::web_pref::kCommonScript] =
             toString16(fontFamily(QWebEngineSettings::SansSerifFont));
-    prefs->cursive_font_family_map[content::kCommonScript] =
+    prefs->cursive_font_family_map[blink::web_pref::kCommonScript] =
             toString16(fontFamily(QWebEngineSettings::CursiveFont));
-    prefs->fantasy_font_family_map[content::kCommonScript] =
+    prefs->fantasy_font_family_map[blink::web_pref::kCommonScript] =
             toString16(fontFamily(QWebEngineSettings::FantasyFont));
-    prefs->pictograph_font_family_map[content::kCommonScript] =
+    prefs->pictograph_font_family_map[blink::web_pref::kCommonScript] =
             toString16(fontFamily(QWebEngineSettings::PictographFont));
     prefs->default_font_size = fontSize(QWebEngineSettings::DefaultFontSize);
     prefs->default_fixed_font_size = fontSize(QWebEngineSettings::DefaultFixedFontSize);
@@ -422,23 +425,16 @@ void WebEngineSettings::applySettingsToWebPreferences(content::WebPreferences *p
 
     // Set the theme colors. Based on chrome_content_browser_client.cc:
     const ui::NativeTheme *webTheme = ui::NativeTheme::GetInstanceForWeb();
-    // WebPreferences::preferred_color_scheme was deleted in Chromium 80, but it
-    // will make a comeback in Chromium 82...
-    //
-    // See also: https://chromium-review.googlesource.com/c/chromium/src/+/2079192
-    //
-    // if (webTheme) {
-    //     switch (webTheme->GetPreferredColorScheme()) {
-    //       case ui::NativeTheme::PreferredColorScheme::kDark:
-    //         prefs->preferred_color_scheme = blink::PreferredColorScheme::kDark;
-    //         break;
-    //       case ui::NativeTheme::PreferredColorScheme::kLight:
-    //         prefs->preferred_color_scheme = blink::PreferredColorScheme::kLight;
-    //         break;
-    //       case ui::NativeTheme::PreferredColorScheme::kNoPreference:
-    //         prefs->preferred_color_scheme = blink::PreferredColorScheme::kNoPreference;
-    //     }
-    // }
+    if (webTheme) {
+        switch (webTheme->GetPreferredColorScheme()) {
+          case ui::NativeTheme::PreferredColorScheme::kDark:
+            prefs->preferred_color_scheme = blink::PreferredColorScheme::kDark;
+            break;
+          case ui::NativeTheme::PreferredColorScheme::kLight:
+            prefs->preferred_color_scheme = blink::PreferredColorScheme::kLight;
+            break;
+        }
+    }
 
     // Apply native CaptionStyle parameters.
     base::Optional<ui::CaptionStyle> style;

@@ -21,7 +21,8 @@ defineReplace(qtwebengine_checkWebEngineCoreError) {
     !qtwebengine_checkForGperf(QtWebEngine):return(false)
     !qtwebengine_checkForBison(QtWebEngine):return(false)
     !qtwebengine_checkForFlex(QtWebEngine):return(false)
-    !qtwebengine_checkForPython2(QtWebengine):return(false)
+    !qtwebengine_checkForPython2(QtWebEngine):return(false)
+    !qtwebengine_checkForNodejs(QtWebEngine):return(false)
     !qtwebengine_checkForSanitizer(QtWebEngine):return(false)
     linux:!qtwebengine_checkForPkgCfg(QtWebEngine):return(false)
     linux:!qtwebengine_checkForHostPkgCfg(QtWebEngine):return(false)
@@ -54,6 +55,7 @@ defineReplace(qtwebengine_checkPdfError) {
     !qtwebengine_checkForSanitizer(QtPdf):return(false)
     linux:!qtwebengine_checkForPkgCfg(QtPdf):return(false)
     linux:!qtwebengine_checkForHostPkgCfg(QtPdf):return(false)
+    linux:!qtwebengine_checkForPackage(QtPdf,nss):return(false)
     win32:!qtwebengine_checkForWinVersion(QtPdf):return(false)
     return(true)
 }
@@ -146,6 +148,15 @@ defineTest(qtwebengine_checkForPython2) {
     module = $$1
     !qtConfig(webengine-python2) {
         qtwebengine_skipBuild("Python version 2 (2.7.5 or later) is required to build $${module}.")
+        return(false)
+    }
+    return(true)
+}
+
+defineTest(qtwebengine_checkForNodejs) {
+    module = $$1
+    !qtConfig(webengine-nodejs) {
+        qtwebengine_skipBuild("Nodejs is required to build $${module}.")
         return(false)
     }
     return(true)

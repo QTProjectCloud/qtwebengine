@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -37,11 +37,30 @@
 **
 ****************************************************************************/
 
-#include "user_script_data.h"
-#include "base/pickle.h"
+#ifndef MESSAGING_DELEGATE_QT_H
+#define MESSAGING_DELEGATE_QT_H
 
-UserScriptData::UserScriptData() : injectionPoint(AfterLoad)
-{
-    static uint64_t idCount = 0;
-    scriptId = idCount++;
+#include "extensions/browser/api/messaging/messaging_delegate.h"
+
+namespace base {
+class DictionaryValue;
 }
+
+namespace content {
+class WebContents;
+}
+
+namespace extensions {
+
+class MessagingDelegateQt : public MessagingDelegate
+{
+public:
+    MessagingDelegateQt();
+
+    // MessagingDelegate implementation.
+    std::unique_ptr<base::DictionaryValue> MaybeGetTabInfo(content::WebContents *web_contents) override;
+};
+
+} // namespace extensions
+
+#endif // MESSAGING_DELEGATE_QT_H

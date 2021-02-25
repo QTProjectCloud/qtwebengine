@@ -37,38 +37,54 @@
 **
 ****************************************************************************/
 
-#ifndef USER_SCRIPT_DATA_H
-#define USER_SCRIPT_DATA_H
+#ifndef WEB_ENGINE_PAGE_HOST_H
+#define WEB_ENGINE_PAGE_HOST_H
 
-#include <QtCore/QHash>
-#include <string>
-#include "ipc/ipc_message_utils.h"
-#include "url/gurl.h"
+#include "content/public/browser/web_contents_observer.h"
 
-struct UserScriptData {
-    enum InjectionPoint {
-        AfterLoad,
-        DocumentLoadFinished,
-        DocumentElementCreation
-    };
+#include <QtGlobal>
 
-    UserScriptData();
+namespace content {
+class WebContents;
+}
 
-    std::string source;
-    GURL url;
-    uint8_t injectionPoint = AfterLoad;
-    bool injectForSubframes = false;
-    uint worldId = 1;
-    uint64_t scriptId;
-    std::vector<std::string> globs;
-    std::vector<std::string> excludeGlobs;
-    std::vector<std::string> urlPatterns;
+namespace mojo {
+template<typename Type>
+class AssociatedRemote;
+}
+
+namespace qtwebenginepage {
+namespace mojom {
+class WebEnginePageRenderFrame;
+}
+}
+
+namespace QtWebEngineCore {
+
+using WebEnginePageRenderFrameRemote = mojo::AssociatedRemote<qtwebenginepage::mojom::WebEnginePageRenderFrame>;
+
+class WebContentsAdapterClient;
+
+class WebEnginePageHost : public content::WebContentsObserver
+{
+public:
+    WebEnginePageHost(content::WebContents *, WebContentsAdapterClient *adapterClient);
+    void FetchDocumentMarkup(uint64_t requestId);
+    void FetchDocumentInnerText(uint64_t requestId);
+    void RenderFrameDeleted(content::RenderFrameHost *render_frame) override;
+    void SetBackgroundColor(uint32_t color);
+
+private:
+    void OnDidFetchDocumentMarkup(uint64_t requestId, const std::string &markup);
+    void OnDidFetchDocumentInnerText(uint64_t requestId, const std::string &innerText);
+    const WebEnginePageRenderFrameRemote &
+    GetWebEnginePageRenderFrame(content::RenderFrameHost *rfh);
+
+private:
+    WebContentsAdapterClient *m_adapterClient;
+    std::map<content::RenderFrameHost *, WebEnginePageRenderFrameRemote> m_renderFrames;
 };
 
-QT_BEGIN_NAMESPACE
+} // namespace QtWebEngineCore
 
-Q_DECLARE_TYPEINFO(UserScriptData, Q_MOVABLE_TYPE);
-
-QT_END_NAMESPACE
-
-#endif // USER_SCRIPT_DATA_H
+#endif // WEB_ENGINE_PAGE_HOST_H

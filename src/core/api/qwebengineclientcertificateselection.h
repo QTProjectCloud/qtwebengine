@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -37,41 +37,43 @@
 **
 ****************************************************************************/
 
-#include "qtwebenginewidgetsglobal.h"
+#ifndef QWEBENGINECLIENTCERTSELECTION_H
+#define QWEBENGINECLIENTCERTSELECTION_H
 
-#include <QCoreApplication>
-#include <QOpenGLContext>
-#include <QQuickWindow>
+#include <QtWebEngineCore/qtwebenginecoreglobal.h>
+#include <QtNetwork/qtnetwork-config.h>
+#include <QtCore/qlist.h>
+#include <QtCore/qscopedpointer.h>
+#include <QtNetwork/qsslcertificate.h>
 
-namespace QtWebEngineCore
-{
-    extern void initialize();
+namespace QtWebEngineCore {
+class ClientCertSelectController;
 }
 
 QT_BEGIN_NAMESPACE
 
-#if QT_CONFIG(opengl)
-Q_GUI_EXPORT QOpenGLContext *qt_gl_global_share_context();
-#endif
+class Q_WEBENGINECORE_EXPORT QWebEngineClientCertificateSelection {
+public:
+    QWebEngineClientCertificateSelection(const QWebEngineClientCertificateSelection &);
+    ~QWebEngineClientCertificateSelection();
 
-static void initialize()
-{
-#if QT_CONFIG(opengl)
-    if (QCoreApplication::instance()) {
-        //On window/ANGLE, calling QtWebEngine::initialize from DllMain will result in a crash.
-        if (!qt_gl_global_share_context()) {
-            qWarning("Qt WebEngine seems to be initialized from a plugin. Please "
-                     "set Qt::AA_ShareOpenGLContexts using QCoreApplication::setAttribute "
-                     "before constructing QGuiApplication.");
-        }
-        return;
-    }
-    //QCoreApplication is not yet instantiated, ensuring the call will be deferred
-    qAddPreRoutine(QtWebEngineCore::initialize);
-    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGLRhi);
-#endif // QT_CONFIG(opengl)
-}
+    QWebEngineClientCertificateSelection &operator=(const QWebEngineClientCertificateSelection &);
 
-Q_CONSTRUCTOR_FUNCTION(initialize)
+    QUrl host() const;
+
+    void select(const QSslCertificate &certificate);
+    void selectNone();
+    QList<QSslCertificate> certificates() const;
+
+private:
+    friend class QWebEnginePagePrivate;
+
+    QWebEngineClientCertificateSelection(
+            QSharedPointer<QtWebEngineCore::ClientCertSelectController>);
+
+    QSharedPointer<QtWebEngineCore::ClientCertSelectController> d_ptr;
+};
 
 QT_END_NAMESPACE
+
+#endif // QWEBENGINECLIENTCERTSELECTION_H

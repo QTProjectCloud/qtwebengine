@@ -44,15 +44,14 @@
 #include "qwebenginepage_p.h"
 #include "qwebengineview.h"
 #include "qwebengineview_p.h"
+
 #include <QGuiApplication>
 #include <QLayout>
 #include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QResizeEvent>
-#include <QSGNode>
+#include <QSGImageNode>
 #include <QWindow>
-#include <QtQuick/qsgimagenode.h>
-#include <QtQuick/private/qquickwindow_p.h>
 
 namespace QtWebEngineCore {
 
@@ -131,7 +130,7 @@ protected:
             if (comp->hasAlphaChannel())
                 texOpts.setFlag(QQuickWindow::TextureHasAlphaChannel);
             int texId = comp->textureId();
-            node->setTexture(QPlatformInterface::QSGOpenGLTexture::fromNative(texId, win, texSize, texOpts));
+            node->setTexture(QNativeInterface::QSGOpenGLTexture::fromNative(texId, win, texSize, texOpts));
             node->setTextureCoordinatesTransform(QSGImageNode::MirrorVertically);
         } else {
             Q_UNREACHABLE();
@@ -180,7 +179,7 @@ RenderWidgetHostViewQtDelegateWidget::RenderWidgetHostViewQtDelegateWidget(Rende
 
 RenderWidgetHostViewQtDelegateWidget::~RenderWidgetHostViewQtDelegateWidget()
 {
-    QWebEnginePagePrivate::bindPageAndWidget(nullptr, this);
+    QWebEngineViewPrivate::bindPageAndWidget(nullptr, this);
 }
 
 void RenderWidgetHostViewQtDelegateWidget::connectRemoveParentBeforeParentDelete()
@@ -463,6 +462,14 @@ void RenderWidgetHostViewQtDelegateWidget::unhandledWheelEvent(QWheelEvent *ev)
 void RenderWidgetHostViewQtDelegateWidget::onWindowPosChanged()
 {
     m_client->visualPropertiesChanged();
+}
+
+void RenderWidgetHostViewQtDelegateWidget::adapterClientChanged(WebContentsAdapterClient *client)
+{
+    QWebEnginePage *page = static_cast<QWebEnginePagePrivate *>(client)->q_func();
+    QWebEngineViewPrivate::bindPageAndWidget(page, this);
+    connect(page, &QWebEnginePage::_q_aboutToDelete, this,
+            [this]() { QWebEngineViewPrivate::bindPageAndWidget(nullptr, this); });
 }
 
 #if QT_CONFIG(accessibility)

@@ -39,13 +39,11 @@
 
 #include "qwebengineprofile.h"
 #include "qwebengineprofile_p.h"
-
+#include "qwebenginenotification.h"
 #include "qwebenginecookiestore.h"
 #include "qwebenginedownloadrequest.h"
 #include "qwebenginedownloadrequest_p.h"
-#include "qwebenginenotificationpresenter_p.h"
-#include "qwebenginepage.h"
-#include "qwebenginepage_p.h"
+#include "qwebenginenotification.h"
 #include "qwebenginesettings.h"
 #include "qwebenginescriptcollection_p.h"
 #include "qtwebenginecoreglobal.h"
@@ -234,9 +232,9 @@ void QWebEngineProfilePrivate::downloadRequested(DownloadItemInfo &info)
     itemPrivate->savePageFormat = static_cast<QWebEngineDownloadRequest::SavePageFormat>(info.savePageFormat);
     itemPrivate->isSavePageDownload = info.isSavePageDownload;
     if (info.page && info.page->clientType() == QtWebEngineCore::WebContentsAdapterClient::WidgetsClient)
-        itemPrivate->page = static_cast<QWebEnginePagePrivate *>(info.page)->q_ptr;
+        itemPrivate->m_adapterClient = info.page;
     else
-        itemPrivate->page = nullptr;
+        itemPrivate->m_adapterClient = nullptr;
 
     QWebEngineDownloadRequest *download = new QWebEngineDownloadRequest(itemPrivate, q);
 
@@ -584,34 +582,6 @@ QWebEngineCookieStore* QWebEngineProfile::cookieStore()
     return d->profileAdapter()->cookieStore();
 }
 
-#if QT_DEPRECATED_SINCE(5, 13)
-/*!
-    Registers a request interceptor singleton \a interceptor to intercept URL requests.
-
-    The profile does not take ownership of the pointer.
-
-    \obsolete
-
-    Interceptors installed with this method will call
-    QWebEngineUrlRequestInterceptor::interceptRequest on the I/O thread. Therefore
-    the user has to provide thread-safe interaction with the other user classes.
-    For a duration of this call ui thread is blocked.
-    Use setUrlRequestInterceptor instead.
-
-    \since 5.6
-    \sa QWebEngineUrlRequestInfo
-
-*/
-void QWebEngineProfile::setRequestInterceptor(QWebEngineUrlRequestInterceptor *interceptor)
-{
-    Q_D(QWebEngineProfile);
-    if (interceptor)
-        interceptor->setProperty("deprecated", true);
-    d->profileAdapter()->setRequestInterceptor(interceptor);
-    if (interceptor)
-        qDebug("Use of deprecated not thread-safe setter, use setUrlRequestInterceptor instead.");
-}
-#endif
 /*!
     Registers a request interceptor singleton \a interceptor to intercept URL requests.
 
@@ -684,6 +654,16 @@ void QWebEngineProfile::setNotificationPresenter(std::function<void(std::unique_
 }
 
 /*!
+    Returns presenter responsible for presenting sent notifications
+    \since 6.0
+ */
+std::function<void(std::unique_ptr<QWebEngineNotification>)> QWebEngineProfile::notificationPresenter()
+{
+    Q_D(QWebEngineProfile);
+    return d->m_notificationPresenter;
+}
+
+/*!
     Returns the default profile.
 
     The default profile uses the storage name "Default".
@@ -695,8 +675,6 @@ QWebEngineProfile *QWebEngineProfile::defaultProfile()
     static QWebEngineProfile* profile = new QWebEngineProfile(
                 new QWebEngineProfilePrivate(ProfileAdapter::createDefaultProfileAdapter()),
                 ProfileAdapter::globalQObjectRoot());
-    if (!profile->d_ptr->m_notificationPresenter)
-        profile->setNotificationPresenter(&defaultNotificationPresenter);
     return profile;
 }
 
@@ -829,6 +807,8 @@ void QWebEngineProfile::removeAllUrlSchemeHandlers()
 /*!
     \since 5.13
 
+    \obsolete
+
     Sets if this profile is to be used for downloading and caching when needed
     during certificate verification, for instance for OCSP, CRLs, and AIA.
 
@@ -837,10 +817,13 @@ void QWebEngineProfile::removeAllUrlSchemeHandlers()
     needlessly re-downloading. If you set the option on a second profile,
     it will be disabled on the profile it is currently set.
 
-    Currently only affects Linux/NSS installations where it enables OCSP.
-
     As long as one profile has \a enabled set to \c true, all other profiles
     will be able to use it for their certificate verification.
+
+    Originally only affected Linux/NSS installations where it enabled OCSP.
+
+    Since 5.15.3, no longer does anything. Certificate verification is done
+    using AIO on the requesting profile.
 
     \sa isUsedForGlobalCertificateVerification(), httpCacheType()
 */
@@ -852,6 +835,8 @@ void QWebEngineProfile::setUseForGlobalCertificateVerification(bool enabled)
 
 /*!
     \since 5.13
+
+    \obsolete
 
     Returns \c true if this profile is currently being used for global
     certificate verification.

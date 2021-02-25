@@ -40,8 +40,8 @@
 #ifndef QWEBENGINEPAGE_H
 #define QWEBENGINEPAGE_H
 
-#include <QtWebEngineWidgets/qtwebenginewidgetsglobal.h>
-#include <QtWebEngineWidgets/qwebengineclientcertificateselection.h>
+#include <QtWebEngineCore/qtwebenginecoreglobal.h>
+#include <QtWebEngineCore/qwebengineclientcertificateselection.h>
 #include <QtWebEngineCore/qwebenginedownloadrequest.h>
 #include <QtWebEngineCore/qwebenginecallback.h>
 #include <QtWebEngineCore/qwebenginehttprequest.h>
@@ -50,8 +50,8 @@
 #include <QtCore/qurl.h>
 #include <QtCore/qvariant.h>
 #include <QtGui/qpagelayout.h>
+#include <QtGui/qaction.h>
 #include <QtNetwork/qnetworkaccessmanager.h>
-#include <QtWidgets/qwidget.h>
 
 QT_BEGIN_NAMESPACE
 class QMenu;
@@ -73,7 +73,7 @@ class QWebEngineScriptCollection;
 class QWebEngineSettings;
 class QWebEngineUrlRequestInterceptor;
 
-class QWEBENGINEWIDGETS_EXPORT QWebEnginePage : public QObject {
+class Q_WEBENGINECORE_EXPORT QWebEnginePage : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString selectedText READ selectedText)
     Q_PROPERTY(bool hasSelection READ hasSelection)
@@ -239,9 +239,6 @@ public:
     ~QWebEnginePage();
     QWebEngineHistory *history() const;
 
-    void setView(QWidget *view);
-    QWidget *view() const;
-
     bool hasSelection() const;
     QString selectedText() const;
 
@@ -322,6 +319,8 @@ public:
     bool isVisible() const;
     void setVisible(bool visible);
 
+    static QWebEnginePage* fromDownloadRequest(QWebEngineDownloadRequest * request);
+
 Q_SIGNALS:
     void loadStarted();
     void loadProgress(int progress);
@@ -365,6 +364,9 @@ Q_SIGNALS:
 
     void findTextFinished(const QWebEngineFindTextResult &result);
 
+    // TODO: fixme / rewrite bindPageToView
+    void _q_aboutToDelete();
+
 protected:
     virtual QWebEnginePage *createWindow(WebWindowType type);
     virtual QStringList chooseFiles(FileSelectionMode mode, const QStringList &oldFiles, const QStringList &acceptedMimeTypes);
@@ -374,7 +376,6 @@ protected:
     virtual void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString& message, int lineNumber, const QString& sourceID);
     virtual void certificateError(QWebEngineCertificateError certificateError);
     virtual bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame);
-
 private:
     Q_DISABLE_COPY(QWebEnginePage)
     Q_DECLARE_PRIVATE(QWebEnginePage)
@@ -393,6 +394,10 @@ private:
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QWebEnginePage::FindFlags)
+
+Q_WEBENGINECORE_EXPORT QDataStream &operator<<(QDataStream &stream,
+                                                 const QWebEngineHistory &history);
+Q_WEBENGINECORE_EXPORT QDataStream &operator>>(QDataStream &stream, QWebEngineHistory &history);
 
 QT_END_NAMESPACE
 

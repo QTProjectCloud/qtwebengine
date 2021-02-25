@@ -251,9 +251,9 @@ void QQuickWebEngineProfilePrivate::downloadRequested(DownloadItemInfo &info)
                 info.savePageFormat);
     itemPrivate->isSavePageDownload = info.isSavePageDownload;
     if (info.page && info.page->clientType() == QtWebEngineCore::WebContentsAdapterClient::QmlClient)
-        itemPrivate->page = static_cast<QQuickWebEngineViewPrivate *>(info.page)->q_ptr;
+        itemPrivate->m_adapterClient = info.page;
     else
-        itemPrivate->page = nullptr;
+        itemPrivate->m_adapterClient = nullptr;
 
     QWebEngineDownloadRequest *download = new QWebEngineDownloadRequest(itemPrivate, q);
 
@@ -801,6 +801,7 @@ bool QQuickWebEngineProfile::isSpellCheckEnabled() const
 /*!
     \property QQuickWebEngineProfile::useForGlobalCertificateVerification
     \since 5.13
+    \obsolete
 
     This property holds whether this profile is used for downloading and
     caching during global certificate verification when using the online
@@ -814,13 +815,17 @@ bool QQuickWebEngineProfile::isSpellCheckEnabled() const
 
     By default, no profile has this property enabled.
 
-    Currently, only affects Linux/NSS installations, where having a profile with
-    this role enables OCSP.
+    Originally only affected Linux/NSS installations, where having a profile with
+    this role enabled OCSP.
+
+    Since 5.15.3 no longer does anything, and certificate verification is now
+    done using AIO on the requesting profile.
 */
 
 /*!
     \qmlproperty bool WebEngineProfile::useForGlobalCertificateVerification
     \since QtWebEngine 1.9
+    \obsolete
 
     This property holds whether this profile is used for downloading and
     caching during global certificate verification when using the online
@@ -834,8 +839,11 @@ bool QQuickWebEngineProfile::isSpellCheckEnabled() const
 
     By default, no profile has this property enabled.
 
-    Currently, only affects Linux/NSS installations, where having a profile with
-    this role enables OCSP.
+    Originally only affected Linux/NSS installations, where having a profile with
+    this role enabled OCSP.
+
+    Since 5.15.3 no longer does anything, and certificate verification is now
+    done using AIO on the requesting profile.
 */
 
 void QQuickWebEngineProfile::setUseForGlobalCertificateVerification(bool enable)
@@ -925,31 +933,6 @@ void QQuickWebEngineProfile::clearHttpCache()
     Q_D(QQuickWebEngineProfile);
     d->profileAdapter()->clearHttpCache();
 }
-
-#if QT_DEPRECATED_SINCE(5, 13)
-/*!
-    Registers a request interceptor singleton \a interceptor to intercept URL requests.
-
-    The profile does not take ownership of the pointer.
-
-    \obsolete
-
-    Interceptors installed with this method will call
-    QWebEngineUrlRequestInterceptor::interceptRequest on the I/O thread. Therefore
-    the user has to provide thread-safe interaction with the other user classes.
-    Use setUrlRequestInterceptor instead.
-
-    \sa QWebEngineUrlRequestInterceptor
-
-*/
-void QQuickWebEngineProfile::setRequestInterceptor(QWebEngineUrlRequestInterceptor *interceptor)
-{
-    Q_D(QQuickWebEngineProfile);
-    interceptor->setProperty("deprecated", true);
-    d->profileAdapter()->setRequestInterceptor(interceptor);
-    qWarning("Use of deprecated not tread-safe setter, use setUrlRequestInterceptor instead.");
-}
-#endif
 
 /*!
     Registers a request interceptor singleton \a interceptor to intercept URL requests.

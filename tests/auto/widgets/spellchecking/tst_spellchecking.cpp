@@ -28,8 +28,8 @@
 
 #include "util.h"
 #include <QtTest/QtTest>
-#include <QtWebEngineWidgets/qwebengineprofile.h>
-#include <QtWebEngineWidgets/qwebenginepage.h>
+#include <QtWebEngineCore/qwebengineprofile.h>
+#include <QtWebEngineCore/qwebenginepage.h>
 #include <QtWebEngineWidgets/qwebengineview.h>
 #include <qwebenginesettings.h>
 

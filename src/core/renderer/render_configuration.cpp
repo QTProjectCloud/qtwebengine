@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -37,52 +37,42 @@
 **
 ****************************************************************************/
 
-//
-//  W A R N I N G
-//  -------------
-//
-// This file is not part of the Qt API.  It exists purely as an
-// implementation detail.  This header file may change from version to
-// version without notice, or even be removed.
-//
-// We mean it.
-//
+// based on chrome/renderer/chrome_render_thread_observer.cc:
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-#ifndef PRINTER_WORKER_H
-#define PRINTER_WORKER_H
-
-#include "qtwebenginecoreglobal_p.h"
-
-#include <QSharedPointer>
-
-QT_BEGIN_NAMESPACE
-class QPrinter;
-QT_END_NAMESPACE
+#include "renderer/render_configuration.h"
+#include "user_resource_controller.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 
 namespace QtWebEngineCore {
 
-class PrinterWorker : public QObject
+bool RenderConfiguration::m_isIncognitoProcess = false;
+
+void RenderConfiguration::RegisterMojoInterfaces(
+        blink::AssociatedInterfaceRegistry *associated_interfaces)
 {
-    Q_OBJECT
-public:
-    PrinterWorker(QSharedPointer<QByteArray> data, QPrinter *printer);
-    virtual ~PrinterWorker();
+    associated_interfaces->AddInterface(
+            base::Bind(&RenderConfiguration::OnRendererConfigurationAssociatedRequest,
+                       base::Unretained(this)));
+}
 
-public Q_SLOTS:
-    void print();
+void RenderConfiguration::UnregisterMojoInterfaces(
+        blink::AssociatedInterfaceRegistry *associated_interfaces)
+{
+    associated_interfaces->RemoveInterface(qtwebengine::mojom::RendererConfiguration::Name_);
+}
 
-Q_SIGNALS:
-    void resultReady(bool success);
+void RenderConfiguration::SetInitialConfiguration(bool is_incognito_process)
+{
+    m_isIncognitoProcess = is_incognito_process;
+}
 
-private:
-    Q_DISABLE_COPY(PrinterWorker)
+void RenderConfiguration::OnRendererConfigurationAssociatedRequest(
+        mojo::PendingAssociatedReceiver<qtwebengine::mojom::RendererConfiguration> receiver)
+{
+    m_rendererConfigurationReceivers.Add(this, std::move(receiver));
+}
 
-    QSharedPointer<QByteArray> m_data;
-    QPrinter *m_printer;
-};
-
-} // namespace QtWebEngineCore
-
-Q_DECLARE_METATYPE(QtWebEngineCore::PrinterWorker*)
-
-#endif // PRINTER_WORKER_H
+} // namespace

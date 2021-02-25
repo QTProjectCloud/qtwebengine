@@ -64,6 +64,7 @@
 namespace QtWebEngineCore {
 class RenderWidgetHostViewQtDelegate;
 class RenderWidgetHostViewQtDelegateWidget;
+class RenderWidgetHostViewQtDelegateClient;
 class TouchHandleDrawableClient;
 class TouchSelectionMenuController;
 class WebContentsAdapter;
@@ -77,7 +78,35 @@ class QWebEngineProfile;
 class QWebEngineSettings;
 class QWebEngineView;
 
-class QWebEnginePagePrivate : public QtWebEngineCore::WebContentsAdapterClient
+class PageView
+{
+public:
+    virtual void contextMenuRequested(QWebEngineContextMenuRequest *request) = 0;
+    virtual QStringList chooseFiles(QWebEnginePage::FileSelectionMode mode,
+                                    const QStringList &oldFiles,
+                                    const QStringList &acceptedMimeTypes) = 0;
+    virtual void
+    showColorDialog(QSharedPointer<QtWebEngineCore::ColorChooserController> controller) = 0;
+    virtual bool showAuthorizationDialog(const QString &title, const QString &message) = 0;
+    virtual void javaScriptAlert(const QUrl &url, const QString &msg) = 0;
+    virtual bool javaScriptConfirm(const QUrl &url, const QString &msg) = 0;
+    virtual bool javaScriptPrompt(const QUrl &url, const QString &msg, const QString &defaultValue,
+                                  QString *result) = 0;
+    virtual void setToolTip(const QString &toolTipText) = 0;
+    virtual QtWebEngineCore::RenderWidgetHostViewQtDelegate *CreateRenderWidgetHostViewQtDelegate(
+            QtWebEngineCore::RenderWidgetHostViewQtDelegateClient *client) = 0;
+    virtual QWebEngineContextMenuRequest *lastContextMenuRequest() const = 0;
+    virtual QWebEnginePage *createPageForWindow(QWebEnginePage::WebWindowType type) = 0;
+    virtual bool isEnabled() const = 0;
+    virtual bool isVisible() const = 0;
+    virtual QRect viewportRect() const = 0;
+    virtual void focusContainer() = 0;
+    virtual void unhandledKeyEvent(QKeyEvent *event) = 0;
+    virtual bool passOnFocus(bool reverse) = 0;
+    virtual QObject *accessibilityParentObject() = 0;
+};
+
+class Q_WEBENGINECORE_PRIVATE_EXPORT QWebEnginePagePrivate : public QtWebEngineCore::WebContentsAdapterClient
 {
 public:
     Q_DECLARE_PUBLIC(QWebEnginePage)
@@ -105,7 +134,8 @@ public:
     void loadStarted(const QUrl &provisionalUrl, bool isErrorPage = false) override;
     void loadCommitted() override { }
     void didFirstVisuallyNonEmptyPaint() override { }
-    void loadFinished(bool success, const QUrl &url, bool isErrorPage = false, int errorCode = 0, const QString &errorDescription = QString()) override;
+    void loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode,
+                      const QString &errorDescription, bool triggersErrorPage) override;
     void focusContainer() override;
     void unhandledKeyEvent(QKeyEvent *event) override;
     QSharedPointer<QtWebEngineCore::WebContentsAdapter>
@@ -147,9 +177,7 @@ public:
     void updateContentsSize(const QSizeF &size) override;
     void updateNavigationActions() override;
     void updateEditActions() override;
-    void startDragging(const content::DropData &dropData, Qt::DropActions allowedActions,
-                       const QPixmap &pixmap, const QPoint &offset) override;
-    bool supportsDragging() const override;
+    QObject *dragSource() const override;
     bool isEnabled() const override;
     void setToolTip(const QString &toolTipText) override;
     void printRequested() override;
@@ -158,7 +186,6 @@ public:
     void hideTouchSelectionMenu() override { }
     const QObject *holdingQObject() const override;
     ClientType clientType() override { return QtWebEngineCore::WebContentsAdapterClient::WidgetsClient; }
-    void widgetChanged(QtWebEngineCore::RenderWidgetHostViewQtDelegate *newWidget) override;
     void findTextFinished(const QWebEngineFindTextResult &result) override;
 
     QtWebEngineCore::ProfileAdapter *profileAdapter() override;
@@ -173,15 +200,11 @@ public:
     void setFullScreenMode(bool);
     void ensureInitialized() const;
 
-    static void bindPageAndView(QWebEnginePage *page, QWebEngineView *view);
-    static void bindPageAndWidget(QWebEnginePage *page,
-                                  QtWebEngineCore::RenderWidgetHostViewQtDelegateWidget *widget);
-
     QSharedPointer<QtWebEngineCore::WebContentsAdapter> adapter;
     QWebEngineHistory *history;
     QWebEngineProfile *profile;
     QWebEngineSettings *settings;
-    QWebEngineView *view;
+    PageView *view;
     QUrl url;
     bool isLoading;
     QWebEngineScriptCollection scriptCollection;

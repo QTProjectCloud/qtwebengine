@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2016 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -37,43 +37,49 @@
 **
 ****************************************************************************/
 
-#ifndef QWEBENGINECLIENTCERTSELECTION_H
-#define QWEBENGINECLIENTCERTSELECTION_H
+#ifndef QWEBENGINEHISTORY_P_H
+#define QWEBENGINEHISTORY_P_H
 
-#include <QtWebEngineWidgets/qtwebenginewidgetsglobal.h>
-#include <QtNetwork/qtnetwork-config.h>
-#include <QtCore/qlist.h>
-#include <QtCore/qscopedpointer.h>
-#include <QtNetwork/qsslcertificate.h>
+//
+//  W A R N I N G
+//  -------------
+//
+// This file is not part of the Qt API.  It exists purely as an
+// implementation detail.  This header file may change from version to
+// version without notice, or even be removed.
+//
+// We mean it.
+//
+#include "qtwebenginecoreglobal_p.h"
+#include <QtCore/qshareddata.h>
 
 namespace QtWebEngineCore {
-class ClientCertSelectController;
+class WebContentsAdapterClient;
 }
 
 QT_BEGIN_NAMESPACE
+class QWebEnginePagePrivate;
 
-class QWEBENGINEWIDGETS_EXPORT QWebEngineClientCertificateSelection {
+class QWebEngineHistoryItemPrivate : public QSharedData
+{
 public:
-    QWebEngineClientCertificateSelection(const QWebEngineClientCertificateSelection &);
-    ~QWebEngineClientCertificateSelection();
+    QWebEngineHistoryItemPrivate(QtWebEngineCore::WebContentsAdapterClient *adapter = nullptr,
+                                 int index = 0);
+    QtWebEngineCore::WebContentsAdapterClient *m_adapter;
+    int index;
+};
 
-    QWebEngineClientCertificateSelection &operator=(const QWebEngineClientCertificateSelection &);
+class Q_WEBENGINECORE_PRIVATE_EXPORT QWebEngineHistoryPrivate
+{
+public:
+    QWebEngineHistoryPrivate(QtWebEngineCore::WebContentsAdapterClient *adapter);
+    ~QWebEngineHistoryPrivate();
+    void updateItems() const;
 
-    QUrl host() const;
-
-    void select(const QSslCertificate &certificate);
-    void selectNone();
-    QList<QSslCertificate> certificates() const;
-
-private:
-    friend class QWebEnginePagePrivate;
-
-    QWebEngineClientCertificateSelection(
-            QSharedPointer<QtWebEngineCore::ClientCertSelectController>);
-
-    QSharedPointer<QtWebEngineCore::ClientCertSelectController> d_ptr;
+    QtWebEngineCore::WebContentsAdapterClient *m_adapter;
+    mutable QList<QWebEngineHistoryItem> items;
 };
 
 QT_END_NAMESPACE
 
-#endif // QWEBENGINECLIENTCERTSELECTION_H
+#endif // QWEBENGINEHISTORY_P_H

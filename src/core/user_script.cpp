@@ -37,7 +37,7 @@
 **
 ****************************************************************************/
 
-#include "common/user_script_data.h"
+#include "qtwebengine/userscript/user_script_data.h"
 #include "user_script.h"
 #include "type_conversion.h"
 
@@ -72,6 +72,8 @@ ASSERT_ENUMS_MATCH(UserScript::DocumentElementCreation, UserScriptData::Document
 UserScript::UserScript()
     : QSharedData()
 {
+    static uint64_t idCount = 0;
+    m_scriptData.scriptId = idCount++;
 }
 
 UserScript::UserScript(const UserScript &other) = default;
@@ -199,10 +201,10 @@ void UserScript::parseMetadataHeader()
         line = base::StringPiece(script_text.data() + line_start, line_end - line_start);
 
         if (!in_metadata) {
-            if (line.starts_with(kUserScriptBegin))
+            if (base::StartsWith(line, kUserScriptBegin))
                 in_metadata = true;
         } else {
-            if (line.starts_with(kUserScriptEnd))
+            if (base::StartsWith(line, kUserScriptEnd))
                 break;
 
             std::string value;

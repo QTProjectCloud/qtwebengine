@@ -52,6 +52,9 @@
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/thread_restrictions.h"
 #include "cc/base/switches.h"
+#if QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
+#include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
+#endif
 #include "chrome/common/chrome_switches.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/browser/compositor/surface_utils.h"
@@ -59,7 +62,6 @@
 #include "components/viz/host/host_frame_sink_manager.h"
 #if QT_CONFIG(webengine_printing_and_pdf)
 #include "chrome/browser/printing/print_job_manager.h"
-#include "components/printing/browser/features.h"
 #endif
 #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
 #include "components/viz/common/features.h"
@@ -89,10 +91,11 @@
 #include "mojo/core/embedder/embedder.h"
 #include "net/base/port_util.h"
 #include "ppapi/buildflags/buildflags.h"
+#include "sandbox/policy/switches.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/public/mojom/network_context.mojom.h"
-#include "services/service_manager/sandbox/switches.h"
+#include "services/service_manager/switches.h"
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "services/tracing/public/cpp/tracing_features.h"
 #include "third_party/blink/public/common/features.h"
@@ -162,6 +165,9 @@ static bool usingANGLE()
 
 static bool usingDefaultSGBackend()
 {
+    if (QQuickWindow::graphicsApi() != QSGRendererInterface::OpenGL)
+        return false;
+
     const QStringList args = QGuiApplication::arguments();
 
     //folow logic from contextFactory in src/quick/scenegraph/qsgcontextplugin.cpp
@@ -187,7 +193,7 @@ bool usingSoftwareDynamicGL()
     if (QCoreApplication::testAttribute(Qt::AA_UseSoftwareOpenGL))
         return true;
 #if defined(Q_OS_WIN)
-    HMODULE handle = QPlatformInterface::QWGLContext::openGLModuleHandle();
+    HMODULE handle = QNativeInterface::QWGLContext::openGLModuleHandle();
     wchar_t path[MAX_PATH];
     DWORD size = GetModuleFileName(handle, path, MAX_PATH);
     QFileInfo openGLModule(QString::fromWCharArray(path, size));
@@ -430,6 +436,10 @@ void WebEngineContext::destroy()
     if (m_devtoolsServer)
         m_devtoolsServer->stop();
 
+#if QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
+    if (m_webrtcLogUploader)
+        m_webrtcLogUploader->Shutdown();
+#endif
 
     base::MessagePump::Delegate *delegate =
             static_cast<base::sequence_manager::internal::ThreadControllerWithMessagePumpImpl *>(
@@ -487,6 +497,10 @@ void WebEngineContext::destroy()
 
     // Drop the false reference.
     m_handle->Release();
+
+#if QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
+    m_webrtcLogUploader.reset();
+#endif
 }
 
 WebEngineContext::~WebEngineContext()
@@ -612,7 +626,7 @@ WebEngineContext::WebEngineContext()
 #endif
 
     base::ThreadPoolInstance::Create("Browser");
-    m_contentRunner.reset(content::ContentMainRunner::Create());
+    m_contentRunner = content::ContentMainRunner::Create();
     m_browserRunner = content::BrowserMainRunner::Create();
 
 #ifdef Q_OS_LINUX
@@ -648,16 +662,19 @@ WebEngineContext::WebEngineContext()
     setupProxyPac(parsedCommandLine);
     parsedCommandLine->AppendSwitchPath(switches::kBrowserSubprocessPath, WebEngineLibraryInfo::getPath(content::CHILD_PROCESS_EXE));
 
-    parsedCommandLine->AppendSwitchASCII(service_manager::switches::kApplicationName, QCoreApplication::applicationName().toStdString());
+    parsedCommandLine->AppendSwitchASCII(service_manager::switches::kApplicationName, QCoreApplication::applicationName().toUtf8().toPercentEncoding().toStdString());
 
     // Enable sandboxing on OS X and Linux (Desktop / Embedded) by default.
     bool disable_sandbox = qEnvironmentVariableIsSet(kDisableSandboxEnv);
+#if defined(Q_OS_WIN)
+    disable_sandbox = true; // FIXME: Windows sandbox no longer works on CI, but works fine locally.
+#endif
     if (!disable_sandbox) {
 #if defined(Q_OS_LINUX)
-        parsedCommandLine->AppendSwitch(service_manager::switches::kDisableSetuidSandbox);
+        parsedCommandLine->AppendSwitch(sandbox::policy::switches::kDisableSetuidSandbox);
 #endif
     } else {
-        parsedCommandLine->AppendSwitch(service_manager::switches::kNoSandbox);
+        parsedCommandLine->AppendSwitch(sandbox::policy::switches::kNoSandbox);
         qInfo() << "Sandboxing disabled by user.";
     }
 
@@ -692,15 +709,15 @@ WebEngineContext::WebEngineContext()
     // When enabled, event.movement is calculated in blink instead of in browser.
     appendToFeatureList(disableFeatures, features::kConsolidatedMovementXY.name);
 
+    // Avoid crashing when websites tries using this feature (since 83)
+    appendToFeatureList(disableFeatures, features::kInstalledApp.name);
+
     // Explicitly tell Chromium about default-on features we do not support
     appendToFeatureList(disableFeatures, features::kBackgroundFetch.name);
     appendToFeatureList(disableFeatures, features::kSmsReceiver.name);
     appendToFeatureList(disableFeatures, features::kWebPayments.name);
     appendToFeatureList(disableFeatures, features::kWebUsb.name);
     appendToFeatureList(disableFeatures, media::kPictureInPicture.name);
-
-    // Breaks current colordialog tests.
-    appendToFeatureList(disableFeatures, features::kFormControlsRefresh.name);
 
     if (useEmbeddedSwitches) {
         // embedded switches are based on the switches for Android, see content/browser/android/content_startup_flags.cc
@@ -847,6 +864,16 @@ printing::PrintJobManager* WebEngineContext::getPrintJobManager()
     return m_printJobManager.get();
 }
 #endif
+
+#if QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
+WebRtcLogUploader *WebEngineContext::webRtcLogUploader()
+{
+    if (!m_webrtcLogUploader)
+        m_webrtcLogUploader = std::make_unique<WebRtcLogUploader>();
+    return m_webrtcLogUploader.get();
+}
+#endif
+
 
 static QMutex s_spmMutex;
 QAtomicPointer<gpu::SyncPointManager> WebEngineContext::s_syncPointManager;

@@ -40,6 +40,7 @@
 #include "qwebenginepage.h"
 #include "qwebenginepage_p.h"
 
+#include "qwebenginedownloadrequest_p.h"
 #include "authentication_dialog_controller.h"
 #include "profile_adapter.h"
 #include "color_chooser_controller.h"
@@ -48,7 +49,7 @@
 #include "file_picker_controller.h"
 #include "javascript_dialog_controller.h"
 #if QT_CONFIG(webengine_printing_and_pdf)
-#include "printer_worker.h"
+#include "printing/printer_worker.h"
 #endif
 #include "qwebenginecertificateerror.h"
 #include "qwebenginefindtextresult.h"
@@ -62,45 +63,25 @@
 #include "qwebengineregisterprotocolhandlerrequest.h"
 #include "qwebenginescriptcollection_p.h"
 #include "qwebenginesettings.h"
-#include "qwebengineview.h"
-#include "qwebengineview_p.h"
 #include "user_notification_controller.h"
-#include "render_widget_host_view_qt_delegate_widget.h"
+#include "render_widget_host_view_qt_delegate.h"
 #include "web_contents_adapter.h"
 #include "web_engine_settings.h"
 #include "qwebenginescript.h"
-
+#include "render_view_context_menu_qt.h"
+#include "render_widget_host_view_qt_delegate_client.h"
 #include <QAction>
-#include <QApplication>
+#include <QGuiApplication>
 #include <QAuthenticator>
 #include <QClipboard>
-#if QT_CONFIG(colordialog)
-#include <QColorDialog>
-#endif
-#include <QContextMenuEvent>
-#if QT_CONFIG(filedialog)
-#include <QFileDialog>
-#endif
 #include <QKeyEvent>
 #include <QIcon>
-#if QT_CONFIG(inputdialog)
-#include <QInputDialog>
-#endif
-#include <QLayout>
 #include <QLoggingCategory>
-#if QT_CONFIG(menu)
-#include <QMenu>
-#endif
-#if QT_CONFIG(messagebox)
-#include <QMessageBox>
-#endif
 #include <QMimeData>
 #if QT_CONFIG(webengine_printing_and_pdf)
 #include <QPrinter>
 #include <QThread>
 #endif
-#include <QStandardPaths>
-#include <QStyle>
 #include <QTimer>
 #include <QUrl>
 
@@ -109,6 +90,49 @@ QT_BEGIN_NAMESPACE
 using namespace QtWebEngineCore;
 
 static const int MaxTooltipLength = 1024;
+
+// add temporary dummy code to cover the case when page is loading and there is no view
+class DummyDelegate : public QObject, public QtWebEngineCore::RenderWidgetHostViewQtDelegate
+{
+public:
+    DummyDelegate(RenderWidgetHostViewQtDelegateClient *client) : m_delegateClient(client) {};
+    ~DummyDelegate() = default;
+    void initAsPopup(const QRect &) override { Q_UNREACHABLE(); }
+    QRectF viewGeometry() const override { return QRectF(m_pos, m_size); }
+    void setKeyboardFocus() override { }
+    bool hasKeyboardFocus() override { return false; }
+    void lockMouse() override { Q_UNREACHABLE(); }
+    void unlockMouse() override { Q_UNREACHABLE(); }
+    void show() override { m_delegateClient->notifyShown(); }
+    void hide() override { m_delegateClient->notifyHidden(); }
+    bool isVisible() const override { Q_UNREACHABLE(); }
+    QWindow *window() const override { return nullptr; }
+    void updateCursor(const QCursor &cursor) override
+    { /*setCursor(cursor);*/
+    }
+    void resize(int width, int height) override
+    {
+        m_size = QSize(width, height);
+        m_delegateClient->visualPropertiesChanged();
+    }
+    void move(const QPoint &) override { Q_UNREACHABLE(); }
+    void inputMethodStateChanged(bool, bool) override { }
+    void setInputMethodHints(Qt::InputMethodHints) override { }
+    void setClearColor(const QColor &) override { }
+    void adapterClientChanged(WebContentsAdapterClient *client) override { }
+    bool copySurface(const QRect &rect, const QSize &size, QImage &image)
+    {
+        Q_UNREACHABLE();
+        return false;
+    }
+    QRect windowGeometry() const override { return QRect(m_pos, m_size); }
+    bool forwardEvent(QEvent *ev) { return m_delegateClient->forwardEvent(ev); }
+
+private:
+    RenderWidgetHostViewQtDelegateClient *m_delegateClient;
+    QPoint m_pos;
+    QSize m_size;
+};
 
 static QWebEnginePage::WebWindowType toWindowType(WebContentsAdapterClient::WindowOpenDisposition disposition)
 {
@@ -176,7 +200,7 @@ RenderWidgetHostViewQtDelegate *QWebEnginePagePrivate::CreateRenderWidgetHostVie
     // The new delegate will not be deleted by the parent view though, because we unset the parent
     // when the parent is destroyed. The delegate will be destroyed by Chromium when the popup is
     // dismissed.
-    return new RenderWidgetHostViewQtDelegateWidget(client, this->view);
+    return view ? view->CreateRenderWidgetHostViewQtDelegate(client) : new DummyDelegate(client);
 }
 
 void QWebEnginePagePrivate::initializationFinished()
@@ -260,7 +284,7 @@ void QWebEnginePagePrivate::renderProcessPidChanged(qint64 pid)
 
 QRectF QWebEnginePagePrivate::viewportRect() const
 {
-    return view ? view->rect() : QRectF();
+    return view ? view->viewportRect() : QRectF();
 }
 
 QColor QWebEnginePagePrivate::backgroundColor() const
@@ -281,7 +305,8 @@ void QWebEnginePagePrivate::loadStarted(const QUrl &provisionalUrl, bool isError
     QTimer::singleShot(0, q, &QWebEnginePage::loadStarted);
 }
 
-void QWebEnginePagePrivate::loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode, const QString &errorDescription)
+void QWebEnginePagePrivate::loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode,
+                                         const QString &errorDescription, bool triggersErrorPage)
 {
     Q_Q(QWebEnginePage);
     Q_UNUSED(url);
@@ -289,7 +314,6 @@ void QWebEnginePagePrivate::loadFinished(bool success, const QUrl &url, bool isE
     Q_UNUSED(errorDescription);
 
     if (isErrorPage) {
-        Q_ASSERT(settings->testAttribute(QWebEngineSettings::ErrorPageEnabled));
         QTimer::singleShot(0, q, [q](){
             emit q->loadFinished(false);
         });
@@ -297,9 +321,8 @@ void QWebEnginePagePrivate::loadFinished(bool success, const QUrl &url, bool isE
     }
 
     isLoading = false;
-    // Delay notifying failure until the error-page is done loading.
-    // Error-pages are not loaded on failures due to abort.
-    if (success || errorCode == -3 /* ERR_ABORTED*/ || !settings->testAttribute(QWebEngineSettings::ErrorPageEnabled)) {
+    Q_ASSERT((success && !triggersErrorPage) || !success);
+    if (!triggersErrorPage) {
         QTimer::singleShot(0, q, [q, success](){
             emit q->loadFinished(success);
         });
@@ -315,15 +338,15 @@ void QWebEnginePagePrivate::didPrintPageToPdf(const QString &filePath, bool succ
 void QWebEnginePagePrivate::focusContainer()
 {
     if (view) {
-        view->activateWindow();
-        view->setFocus();
+        view->focusContainer();
     }
 }
 
 void QWebEnginePagePrivate::unhandledKeyEvent(QKeyEvent *event)
 {
-    if (view && view->parentWidget())
-        QGuiApplication::sendEvent(view->parentWidget(), event);
+    if (view) {
+        view->unhandledKeyEvent(event);
+    }
 }
 
 QSharedPointer<WebContentsAdapter>
@@ -336,8 +359,13 @@ QWebEnginePagePrivate::adoptNewWindow(QSharedPointer<WebContentsAdapter> newWebC
     Q_UNUSED(targetUrl);
 
     QWebEnginePage *newPage = q->createWindow(toWindowType(disposition));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     if (!newPage)
         return nullptr;
+#else
+    if (!newPage)
+        return adapter;
+#endif
 
     if (!newWebContents->webContents())
         return newPage->d_func()->adapter; // Reuse existing adapter
@@ -432,9 +460,7 @@ void QWebEnginePagePrivate::didPrintPage(quint64 requestId, QSharedPointer<QByte
 
 bool QWebEnginePagePrivate::passOnFocus(bool reverse)
 {
-    if (view)
-        return view->focusNextPrevChild(!reverse);
-    return false;
+    return view ? view->passOnFocus(reverse) : false;
 }
 
 void QWebEnginePagePrivate::authenticationRequired(QSharedPointer<AuthenticationDialogController> controller)
@@ -466,20 +492,8 @@ void QWebEnginePagePrivate::releaseProfile()
 
 void QWebEnginePagePrivate::showColorDialog(QSharedPointer<ColorChooserController> controller)
 {
-#if QT_CONFIG(colordialog)
-    QColorDialog *dialog = new QColorDialog(controller.data()->initialColor(), view);
-
-    QColorDialog::connect(dialog, SIGNAL(colorSelected(QColor)), controller.data(), SLOT(accept(QColor)));
-    QColorDialog::connect(dialog, SIGNAL(rejected()), controller.data(), SLOT(reject()));
-
-    // Delete when done
-    QColorDialog::connect(dialog, SIGNAL(colorSelected(QColor)), dialog, SLOT(deleteLater()));
-    QColorDialog::connect(dialog, SIGNAL(rejected()), dialog, SLOT(deleteLater()));
-
-    dialog->open();
-#else
-    Q_UNUSED(controller);
-#endif
+    if (view)
+        view->showColorDialog(controller);
 }
 
 void QWebEnginePagePrivate::runMediaAccessPermissionRequest(const QUrl &securityOrigin, WebContentsAdapterClient::MediaRequestFlags requestFlags)
@@ -541,7 +555,7 @@ void QWebEnginePagePrivate::runRegisterProtocolHandlerRequest(QWebEngineRegister
 
 QObject *QWebEnginePagePrivate::accessibilityParentObject()
 {
-    return view;
+    return view ? view->accessibilityParentObject() : nullptr;
 }
 
 void QWebEnginePagePrivate::updateAction(QWebEnginePage::WebAction action) const
@@ -673,12 +687,6 @@ const QObject *QWebEnginePagePrivate::holdingQObject() const
     return q;
 }
 
-void QWebEnginePagePrivate::widgetChanged(RenderWidgetHostViewQtDelegate *newWidgetBase)
-{
-    Q_Q(QWebEnginePage);
-    bindPageAndWidget(q, static_cast<RenderWidgetHostViewQtDelegateWidget *>(newWidgetBase));
-}
-
 void QWebEnginePagePrivate::findTextFinished(const QWebEngineFindTextResult &result)
 {
     Q_Q(QWebEnginePage);
@@ -689,90 +697,6 @@ void QWebEnginePagePrivate::ensureInitialized() const
 {
     if (!adapter->isInitialized())
         adapter->loadDefault();
-}
-
-void QWebEnginePagePrivate::bindPageAndView(QWebEnginePage *page, QWebEngineView *view)
-{
-    auto oldView = page ? page->d_func()->view : nullptr;
-    auto oldPage = view ? view->d_func()->page : nullptr;
-
-    bool ownNewPage = false;
-    bool deleteOldPage = false;
-
-    // Change pointers first.
-
-    if (page && oldView != view) {
-        if (oldView) {
-            ownNewPage = oldView->d_func()->m_ownsPage;
-            oldView->d_func()->page = nullptr;
-            oldView->d_func()->m_ownsPage = false;
-        }
-        page->d_func()->view = view;
-    }
-
-    if (view && oldPage != page) {
-        if (oldPage) {
-            if (oldPage->d_func())
-                oldPage->d_func()->view = nullptr;
-            deleteOldPage = view->d_func()->m_ownsPage;
-        }
-        view->d_func()->m_ownsPage = ownNewPage;
-        view->d_func()->page = page;
-    }
-
-    // Then notify.
-
-    auto widget = page ? page->d_func()->widget : nullptr;
-    auto oldWidget = (oldPage && oldPage->d_func()) ? oldPage->d_func()->widget : nullptr;
-
-    if (page && oldView != view && oldView) {
-        oldView->d_func()->pageChanged(page, nullptr);
-        if (widget)
-            oldView->d_func()->widgetChanged(widget, nullptr);
-    }
-
-    if (view && oldPage != page) {
-        if (oldPage && oldPage->d_func())
-            view->d_func()->pageChanged(oldPage, page);
-        else
-            view->d_func()->pageChanged(nullptr, page);
-        if (oldWidget != widget)
-            view->d_func()->widgetChanged(oldWidget, widget);
-    }
-    if (deleteOldPage)
-        delete oldPage;
-}
-
-void QWebEnginePagePrivate::bindPageAndWidget(QWebEnginePage *page, RenderWidgetHostViewQtDelegateWidget *widget)
-{
-    auto oldPage = widget ? widget->m_page : nullptr;
-    auto oldWidget = page ? page->d_func()->widget : nullptr;
-
-    // Change pointers first.
-
-    if (widget && oldPage != page) {
-        if (oldPage && oldPage->d_func())
-            oldPage->d_func()->widget = nullptr;
-        widget->m_page = page;
-    }
-
-    if (page && oldWidget != widget) {
-        if (oldWidget)
-            oldWidget->m_page = nullptr;
-        page->d_func()->widget = widget;
-    }
-
-    // Then notify.
-
-    if (widget && oldPage != page && oldPage && oldPage->d_func()) {
-        if (auto oldView = oldPage->d_func()->view)
-            oldView->d_func()->widgetChanged(widget, nullptr);
-    }
-
-    if (page && oldWidget != widget) {
-        if (auto view = page->d_func()->view)
-            view->d_func()->widgetChanged(oldWidget, widget);
-    }
 }
 
 QWebEnginePage::QWebEnginePage(QObject* parent)
@@ -856,15 +780,15 @@ QWebEnginePage::QWebEnginePage(QObject* parent)
 */
 
 /*!
-    \fn QWebEnginePage::registerProtocolHandlerRequested(QWebEngineRegisterProtocolHandlerRequest request)
-    \since 5.11
+    \fn QWebEnginePage::registerProtocolHandlerRequested(QWebEngineRegisterProtocolHandlerRequest
+   request) \since 5.11
 
     This signal is emitted when the web page tries to register a custom protocol
     using the \l registerProtocolHandler API.
 
     The request object \a request can be used to accept or reject the request:
 
-    \snippet webenginewidgets/simplebrowser/webpage.cpp registerProtocolHandlerRequested
+    \snippet webenginewidgets/simplebrowser/webview.cpp registerProtocolHandlerRequested
 */
 
 /*!
@@ -963,8 +887,7 @@ QWebEnginePage::~QWebEnginePage()
     if (d_ptr) {
         // d_ptr might be exceptionally null if profile adapter got deleted first
         setDevToolsPage(nullptr);
-        QWebEnginePagePrivate::bindPageAndView(this, nullptr);
-        QWebEnginePagePrivate::bindPageAndWidget(this, nullptr);
+        emit _q_aboutToDelete();
     }
 }
 
@@ -1150,17 +1073,6 @@ qint64 QWebEnginePage::renderProcessPid() const
     return d->adapter->renderProcessPid();
 }
 
-void QWebEnginePage::setView(QWidget *newViewBase)
-{
-    QWebEnginePagePrivate::bindPageAndView(this, qobject_cast<QWebEngineView *>(newViewBase));
-}
-
-QWidget *QWebEnginePage::view() const
-{
-    Q_D(const QWebEnginePage);
-    return d->view;
-}
-
 /*!
     Returns the web engine profile the page belongs to.
     \since 5.5
@@ -1192,29 +1104,21 @@ QAction *QWebEnginePage::action(WebAction action) const
         return d->actions[action];
 
     QString text;
-    QIcon icon;
-    QStyle *style = d->view ? d->view->style() : qApp->style();
-
     switch (action) {
     case Back:
         text = RenderViewContextMenuQt::getMenuItemName(RenderViewContextMenuQt::ContextMenuItem::Back);
-        icon = style->standardIcon(QStyle::SP_ArrowBack);
         break;
     case Forward:
         text = RenderViewContextMenuQt::getMenuItemName(RenderViewContextMenuQt::ContextMenuItem::Forward);
-        icon = style->standardIcon(QStyle::SP_ArrowForward);
         break;
     case Stop:
         text = tr("Stop");
-        icon = style->standardIcon(QStyle::SP_BrowserStop);
         break;
     case Reload:
         text = RenderViewContextMenuQt::getMenuItemName(RenderViewContextMenuQt::ContextMenuItem::Reload);
-        icon = style->standardIcon(QStyle::SP_BrowserReload);
         break;
     case ReloadAndBypassCache:
         text = tr("Reload and Bypass Cache");
-        icon = style->standardIcon(QStyle::SP_BrowserReload);
         break;
     case Cut:
         text = RenderViewContextMenuQt::getMenuItemName(RenderViewContextMenuQt::ContextMenuItem::Cut);
@@ -1345,7 +1249,6 @@ QAction *QWebEnginePage::action(WebAction action) const
     QAction *a = new QAction(const_cast<QWebEnginePage*>(this));
     a->setText(text);
     a->setData(action);
-    a->setIcon(icon);
 
     connect(a, SIGNAL(triggered(bool)), this, SLOT(_q_webActionTriggered(bool)));
 
@@ -1438,7 +1341,7 @@ void QWebEnginePage::triggerAction(WebAction action, bool)
                          + linkText + QStringLiteral("</a>");
             data->setHtml(html);
             data->setUrls(QList<QUrl>() << d->view->lastContextMenuRequest()->linkUrl());
-            qApp->clipboard()->setMimeData(data);
+            QGuiApplication::clipboard()->setMimeData(data);
         }
         break;
     case DownloadLinkToDisk:
@@ -1475,7 +1378,7 @@ void QWebEnginePage::triggerAction(WebAction action, bool)
             QString html = QStringLiteral("<img src=\"") + urlString + QStringLiteral("\"") + title + alt + QStringLiteral("></img>");
             data->setHtml(html);
             data->setUrls(QList<QUrl>() << d->view->lastContextMenuRequest()->mediaUrl());
-            qApp->clipboard()->setMimeData(data);
+            QGuiApplication::clipboard()->setMimeData(data);
         }
         break;
     case DownloadImageToDisk:
@@ -1507,7 +1410,7 @@ void QWebEnginePage::triggerAction(WebAction action, bool)
                 data->setHtml(QStringLiteral("<video src=\"") + urlString + QStringLiteral("\"") + title +
                               QStringLiteral("></video>"));
             data->setUrls(QList<QUrl>() << d->view->lastContextMenuRequest()->mediaUrl());
-            qApp->clipboard()->setMimeData(data);
+            QGuiApplication::clipboard()->setMimeData(data);
         }
         break;
     case ToggleMediaControls:
@@ -1662,7 +1565,7 @@ bool QWebEnginePage::event(QEvent *e)
 void QWebEnginePagePrivate::contextMenuRequested(QWebEngineContextMenuRequest *data)
 {
     if (view)
-        view->d_ptr->contextMenuRequested(data);
+        view->contextMenuRequested(data);
 }
 
 void QWebEnginePagePrivate::navigationRequested(int navigationType, const QUrl &url, int &navigationRequestAction, bool isMainFrame)
@@ -1708,9 +1611,8 @@ void QWebEnginePagePrivate::javascriptDialog(QSharedPointer<JavaScriptDialogCont
         accepted = q->javaScriptConfirm(controller->securityOrigin(), QCoreApplication::translate("QWebEnginePage", "Are you sure you want to leave this page? Changes that you made may not be saved."));
         break;
     case InternalAuthorizationDialog:
-#if QT_CONFIG(messagebox)
-        accepted = (QMessageBox::question(view, controller->title(), controller->message(), QMessageBox::Yes, QMessageBox::No) == QMessageBox::Yes);
-#endif // QT_CONFIG(messagebox)
+        accepted = view ? view->showAuthorizationDialog(controller->title(), controller->message())
+                        : false;
         break;
     }
     if (accepted)
@@ -1770,29 +1672,17 @@ void QWebEnginePagePrivate::requestGeometryChange(const QRect &geometry, const Q
     Q_EMIT q->geometryChangeRequested(frameGeometry);
 }
 
-void QWebEnginePagePrivate::startDragging(const content::DropData &dropData,
-                                          Qt::DropActions allowedActions, const QPixmap &pixmap,
-                                          const QPoint &offset)
+QObject *QWebEnginePagePrivate::dragSource() const
 {
 #if !QT_CONFIG(draganddrop)
-    Q_UNUSED(dropData);
-    Q_UNUSED(allowedActions);
-    Q_UNUSED(pixmap);
-    Q_UNUSED(offset);
+    return view;
 #else
-    adapter->startDragging(view, dropData, allowedActions, pixmap, offset);
+    return nullptr;
 #endif // QT_CONFIG(draganddrop)
-}
-
-bool QWebEnginePagePrivate::supportsDragging() const
-{
-    return true;
 }
 
 bool QWebEnginePagePrivate::isEnabled() const
 {
-    const Q_Q(QWebEnginePage);
-    const QWidget *view = q->view();
     if (view)
         return view->isEnabled();
     return true;
@@ -1800,23 +1690,8 @@ bool QWebEnginePagePrivate::isEnabled() const
 
 void QWebEnginePagePrivate::setToolTip(const QString &toolTipText)
 {
-    if (!view)
-        return;
-
-    // Hide tooltip if shown.
-    if (toolTipText.isEmpty()) {
-        if (!view->toolTip().isEmpty())
-            view->setToolTip(QString());
-
-        return;
-    }
-
-    // Update tooltip if text was changed.
-    QString wrappedTip = QLatin1String("<p style=\"white-space:pre-wrap\">")
-            % toolTipText.toHtmlEscaped().left(MaxTooltipLength)
-            % QLatin1String("</p>");
-    if (view->toolTip() != wrappedTip)
-        view->setToolTip(wrappedTip);
+    if (view)
+        view->setToolTip(toolTipText);
 }
 
 void QWebEnginePagePrivate::printRequested()
@@ -2169,12 +2044,7 @@ QWebEngineScriptCollection &QWebEnginePage::scripts()
 QWebEnginePage *QWebEnginePage::createWindow(WebWindowType type)
 {
     Q_D(QWebEnginePage);
-    if (d->view) {
-        QWebEngineView *newView = d->view->createWindow(type);
-        if (newView)
-            return newView->page();
-    }
-    return 0;
+    return d->view ? d->view->createPageForWindow(type) : nullptr;
 }
 
 /*!
@@ -2269,89 +2139,33 @@ void QWebEnginePage::setDevToolsPage(QWebEnginePage *devToolsPage)
 ASSERT_ENUMS_MATCH(FilePickerController::Open, QWebEnginePage::FileSelectOpen)
 ASSERT_ENUMS_MATCH(FilePickerController::OpenMultiple, QWebEnginePage::FileSelectOpenMultiple)
 
+// TODO: remove virtuals
 QStringList QWebEnginePage::chooseFiles(FileSelectionMode mode, const QStringList &oldFiles, const QStringList &acceptedMimeTypes)
 {
-#if QT_CONFIG(filedialog)
-    const QStringList &filter = FilePickerController::nameFilters(acceptedMimeTypes);
-    QStringList ret;
-    QString str;
-    switch (static_cast<FilePickerController::FileChooserMode>(mode)) {
-    case FilePickerController::OpenMultiple:
-        ret = QFileDialog::getOpenFileNames(view(), QString(), QString(), filter.join(QStringLiteral(";;")), nullptr, QFileDialog::HideNameFilterDetails);
-        break;
-    // Chromium extension, not exposed as part of the public API for now.
-    case FilePickerController::UploadFolder:
-        str = QFileDialog::getExistingDirectory(view(), tr("Select folder to upload"));
-        if (!str.isNull())
-            ret << str;
-        break;
-    case FilePickerController::Save:
-        str = QFileDialog::getSaveFileName(view(), QString(), (QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) + oldFiles.first()));
-        if (!str.isNull())
-            ret << str;
-        break;
-    case FilePickerController::Open:
-        str = QFileDialog::getOpenFileName(view(), QString(), oldFiles.first(), filter.join(QStringLiteral(";;")), nullptr, QFileDialog::HideNameFilterDetails);
-        if (!str.isNull())
-            ret << str;
-        break;
-    }
-    return ret;
-#else
-    Q_UNUSED(mode);
-    Q_UNUSED(oldFiles);
-    Q_UNUSED(acceptedMimeTypes);
-
-    return QStringList();
-#endif // QT_CONFIG(filedialog)
+    Q_D(const QWebEnginePage);
+    return d->view ? d->view->chooseFiles(mode, oldFiles, acceptedMimeTypes) : QStringList();
 }
 
 void QWebEnginePage::javaScriptAlert(const QUrl &securityOrigin, const QString &msg)
 {
     Q_UNUSED(securityOrigin);
-#if QT_CONFIG(messagebox)
-    QMessageBox::information(view(),
-                             QStringLiteral("Javascript Alert - %1").arg(url().toString()),
-                             msg.toHtmlEscaped());
-#else
-    Q_UNUSED(msg);
-#endif // QT_CONFIG(messagebox)
+    Q_D(const QWebEnginePage);
+    if (d->view)
+        d->view->javaScriptAlert(url(), msg);
 }
 
 bool QWebEnginePage::javaScriptConfirm(const QUrl &securityOrigin, const QString &msg)
 {
     Q_UNUSED(securityOrigin);
-#if QT_CONFIG(messagebox)
-    return (QMessageBox::information(view(),
-                                     QStringLiteral("Javascript Confirm - %1").arg(url().toString()),
-                                     msg.toHtmlEscaped(),
-                                     QMessageBox::Ok,
-                                     QMessageBox::Cancel) == QMessageBox::Ok);
-#else
-    Q_UNUSED(msg);
-    return false;
-#endif // QT_CONFIG(messagebox)
+    Q_D(const QWebEnginePage);
+    return d->view ? d->view->javaScriptConfirm(url(), msg) : false;
 }
 
 bool QWebEnginePage::javaScriptPrompt(const QUrl &securityOrigin, const QString &msg, const QString &defaultValue, QString *result)
 {
     Q_UNUSED(securityOrigin);
-#if QT_CONFIG(inputdialog)
-    bool ret = false;
-    if (result)
-        *result = QInputDialog::getText(view(),
-                                        QStringLiteral("Javascript Prompt - %1").arg(url().toString()),
-                                        msg.toHtmlEscaped(),
-                                        QLineEdit::Normal,
-                                        defaultValue.toHtmlEscaped(),
-                                        &ret);
-    return ret;
-#else
-    Q_UNUSED(msg);
-    Q_UNUSED(defaultValue);
-    Q_UNUSED(result);
-    return false;
-#endif // QT_CONFIG(inputdialog)
+    Q_D(const QWebEnginePage);
+    return d->view ? d->view->javaScriptPrompt(url(), msg, defaultValue, result) : false;
 }
 
 void QWebEnginePage::javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString &message, int lineNumber, const QString &sourceID)
@@ -2615,6 +2429,27 @@ void QWebEnginePage::setVisible(bool visible)
     }
 
     d->adapter->setVisible(visible);
+}
+
+QWebEnginePage* QWebEnginePage::fromDownloadRequest(QWebEngineDownloadRequest *request) {
+    return static_cast<QWebEnginePagePrivate *>(request->d_ptr->m_adapterClient)->q_ptr;
+}
+
+QDataStream &operator<<(QDataStream &stream, const QWebEngineHistory &history)
+{
+    QtWebEngineCore::WebContentsAdapter *adapter =
+            history.d_func()->m_adapter->webContentsAdapter();
+    if (!adapter->isInitialized())
+        adapter->loadDefault();
+    adapter->serializeNavigationHistory(stream);
+    return stream;
+}
+
+QDataStream &operator>>(QDataStream &stream, QWebEngineHistory &history)
+{
+    static_cast<QWebEnginePagePrivate *>(history.d_func()->m_adapter)
+            ->recreateFromSerializedHistory(stream);
+    return stream;
 }
 
 QT_END_NAMESPACE

@@ -66,7 +66,7 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver,
 public:
     static MediaCaptureDevicesDispatcher *GetInstance();
 
-    void processMediaAccessRequest(WebContentsAdapterClient *, content::WebContents *, const content::MediaStreamRequest &, content::MediaResponseCallback);
+    void processMediaAccessRequest(content::WebContents *, const content::MediaStreamRequest &, content::MediaResponseCallback);
 
     // Called back from our WebContentsAdapter to grant the requested permission.
     void handleMediaAccessPermissionResponse(content::WebContents *, const QUrl &securityOrigin, WebContentsAdapterClient::MediaRequestFlags);
@@ -126,6 +126,8 @@ private:
     RequestsQueues m_pendingRequests;
 
     content::NotificationRegistrar m_notificationsRegistrar;
+
+    bool m_loopbackAudioSupported = false;
 
     DISALLOW_COPY_AND_ASSIGN(MediaCaptureDevicesDispatcher);
 };

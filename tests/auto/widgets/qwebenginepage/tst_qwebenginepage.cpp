@@ -177,7 +177,6 @@ private Q_SLOTS:
     void setUrlUsingStateObject();
     void setUrlThenLoads_data();
     void setUrlThenLoads();
-    void loadFinishedAfterNotFoundError();
     void loadInSignalHandlers_data();
     void loadInSignalHandlers();
     void loadFromQrc();
@@ -383,7 +382,7 @@ void tst_QWebEnginePage::geolocationRequestJS()
     QFETCH(int, errorCode);
     QWebEngineView view;
     JSTestPage *newPage = new JSTestPage(&view);
-    newPage->setView(&view);
+    view.setPage(newPage);
     newPage->setGeolocationPermission(allowed);
 
     connect(newPage, SIGNAL(featurePermissionRequested(const QUrl&, QWebEnginePage::Feature)),
@@ -523,7 +522,7 @@ void tst_QWebEnginePage::consoleOutput()
 class TestPage : public QWebEnginePage {
     Q_OBJECT
 public:
-    TestPage(QObject* parent = 0) : QWebEnginePage(parent)
+    TestPage(QObject *parent = nullptr) : QWebEnginePage(parent)
     {
         connect(this, SIGNAL(geometryChangeRequested(QRect)), this, SLOT(slotGeometryChangeRequested(QRect)));
     }
@@ -1719,12 +1718,15 @@ void tst_QWebEnginePage::savePage()
 void tst_QWebEnginePage::openWindowDefaultSize()
 {
     TestPage page;
+    QSignalSpy spyFinished(&page, &QWebEnginePage::loadFinished);
     QSignalSpy windowCreatedSpy(&page, SIGNAL(windowCreated()));
     QWebEngineView view;
-    page.setView(&view);
-    view.show();
-
+    view.setPage(&page);
     page.settings()->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, true);
+    view.setUrl(QUrl("about:blank"));
+    view.show();
+    QTRY_COMPARE(spyFinished.count(), 1);
+
     // Open a default window.
     page.runJavaScript("window.open()");
     QTRY_COMPARE(windowCreatedSpy.count(), 1);
@@ -2830,20 +2832,6 @@ void tst_QWebEnginePage::setUrlThenLoads()
     QCOMPARE(baseUrlSync(m_page), extractBaseUrl(urlToLoad2));
 }
 
-void tst_QWebEnginePage::loadFinishedAfterNotFoundError()
-{
-    QWebEnginePage page;
-    QSignalSpy spy(&page, SIGNAL(loadFinished(bool)));
-
-    page.settings()->setAttribute(QWebEngineSettings::ErrorPageEnabled, false);
-    page.setUrl(QUrl("http://non.existent/url"));
-    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
-
-    page.settings()->setAttribute(QWebEngineSettings::ErrorPageEnabled, true);
-    page.setUrl(QUrl("http://another.non.existent/url"));
-    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 20000);
-}
-
 class URLSetter : public QObject {
     Q_OBJECT
 
@@ -3359,7 +3347,7 @@ void tst_QWebEnginePage::devTools()
     QCOMPARE(devToolsPage.devToolsPage(), nullptr);
     QCOMPARE(devToolsPage.inspectedPage(), &inspectedPage1);
 
-    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 30000);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 90000);
     QVERIFY(spy.takeFirst().value(0).toBool());
 
     devToolsPage.setInspectedPage(&inspectedPage2);
@@ -3371,7 +3359,7 @@ void tst_QWebEnginePage::devTools()
     QCOMPARE(devToolsPage.devToolsPage(), nullptr);
     QCOMPARE(devToolsPage.inspectedPage(), &inspectedPage2);
 
-    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 30000);
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 90000);
     QVERIFY(spy.takeFirst().value(0).toBool());
 
     devToolsPage.setInspectedPage(nullptr);
@@ -3468,7 +3456,11 @@ void tst_QWebEnginePage::openLinkInNewPage_data()
     // the disposition and performing the navigation request normally.
 
     QTest::newRow("BlockPopup")     << Decision::ReturnNull  << Cause::TargetBlank << Effect::Blocked;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QTest::newRow("IgnoreIntent")   << Decision::ReturnNull  << Cause::MiddleClick << Effect::Blocked;
+#else
     QTest::newRow("IgnoreIntent")   << Decision::ReturnNull  << Cause::MiddleClick << Effect::LoadInSelf;
+#endif
     QTest::newRow("OverridePopup")  << Decision::ReturnSelf  << Cause::TargetBlank << Effect::LoadInSelf;
     QTest::newRow("OverrideIntent") << Decision::ReturnSelf  << Cause::MiddleClick << Effect::LoadInSelf;
     QTest::newRow("AcceptPopup")    << Decision::ReturnOther << Cause::TargetBlank << Effect::LoadInOther;
@@ -3545,7 +3537,10 @@ void tst_QWebEnginePage::openLinkInNewPage()
 
     switch (effect) {
     case Effect::Blocked:
-        // Nothing to test
+        // Test nothing new loaded
+        QTest::qWait(500);
+        QCOMPARE(page1.spy.count(), 0);
+        QCOMPARE(page2.spy.count(), 0);
         break;
     case Effect::LoadInSelf:
         QTRY_COMPARE(page1.spy.count(), 1);
@@ -4038,16 +4033,16 @@ void tst_QWebEnginePage::setLifecycleStateWithDevTools()
     // Ensure pages are initialized
     inspectedPage.load(QStringLiteral("about:blank"));
     devToolsPage.load(QStringLiteral("about:blank"));
-    QTRY_COMPARE_WITH_TIMEOUT(inspectedSpy.count(), 1, 30000);
+    QTRY_COMPARE_WITH_TIMEOUT(inspectedSpy.count(), 1, 90000);
     QCOMPARE(inspectedSpy.takeFirst().value(0), QVariant(true));
-    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 1, 30000);
+    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 1, 90000);
     QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(true));
 
     // Open DevTools with Frozen inspectedPage
     inspectedPage.setLifecycleState(QWebEnginePage::LifecycleState::Frozen);
     inspectedPage.setDevToolsPage(&devToolsPage);
     QCOMPARE(inspectedPage.lifecycleState(), QWebEnginePage::LifecycleState::Active);
-    QTRY_COMPARE(devToolsSpy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 1, 90000);
     QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(true));
     inspectedPage.setDevToolsPage(nullptr);
 
@@ -4055,7 +4050,7 @@ void tst_QWebEnginePage::setLifecycleStateWithDevTools()
     inspectedPage.setLifecycleState(QWebEnginePage::LifecycleState::Discarded);
     inspectedPage.setDevToolsPage(&devToolsPage);
     QCOMPARE(inspectedPage.lifecycleState(), QWebEnginePage::LifecycleState::Active);
-    QTRY_COMPARE(devToolsSpy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 1, 90000);
     QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(true));
     QTRY_COMPARE(inspectedSpy.count(), 1);
     QCOMPARE(inspectedSpy.takeFirst().value(0), QVariant(true));
@@ -4065,7 +4060,7 @@ void tst_QWebEnginePage::setLifecycleStateWithDevTools()
     devToolsPage.setLifecycleState(QWebEnginePage::LifecycleState::Frozen);
     devToolsPage.setInspectedPage(&inspectedPage);
     QCOMPARE(devToolsPage.lifecycleState(), QWebEnginePage::LifecycleState::Active);
-    QTRY_COMPARE(devToolsSpy.count(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 1, 90000);
     QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(true));
     devToolsPage.setInspectedPage(nullptr);
 
@@ -4073,7 +4068,7 @@ void tst_QWebEnginePage::setLifecycleStateWithDevTools()
     devToolsPage.setLifecycleState(QWebEnginePage::LifecycleState::Discarded);
     devToolsPage.setInspectedPage(&inspectedPage);
     QCOMPARE(devToolsPage.lifecycleState(), QWebEnginePage::LifecycleState::Active);
-    QTRY_COMPARE(devToolsSpy.count(), 2);
+    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 2, 90000);
     QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(false));
     QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(true));
     // keep DevTools open
@@ -4674,13 +4669,16 @@ void tst_QWebEnginePage::audioMuted()
 void tst_QWebEnginePage::closeContents()
 {
     TestPage page;
+    QSignalSpy spyFinished(&page, &QWebEnginePage::loadFinished);
     QSignalSpy windowCreatedSpy(&page, &TestPage::windowCreated);
+    page.setUrl(QUrl("about:blank"));
+    QTRY_COMPARE(spyFinished.count(), 1);
     page.runJavaScript("var dialog = window.open('', '', 'width=100, height=100');");
     QTRY_COMPARE(windowCreatedSpy.count(), 1);
 
     QWebEngineView *dialogView = new QWebEngineView;
     QWebEnginePage *dialogPage = page.createdWindows[0];
-    dialogPage->setView(dialogView);
+    dialogView->setPage(dialogPage);
     QCOMPARE(dialogPage->lifecycleState(), QWebEnginePage::LifecycleState::Active);
 
     // This should not crash.

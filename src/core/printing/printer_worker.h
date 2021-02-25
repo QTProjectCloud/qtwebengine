@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2018 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -37,36 +37,52 @@
 **
 ****************************************************************************/
 
-#ifndef RENDER_VIEW_OBSERVER_HOST_QT_H
-#define RENDER_VIEW_OBSERVER_HOST_QT_H
+//
+//  W A R N I N G
+//  -------------
+//
+// This file is not part of the Qt API.  It exists purely as an
+// implementation detail.  This header file may change from version to
+// version without notice, or even be removed.
+//
+// We mean it.
+//
 
-#include "content/public/browser/web_contents_observer.h"
+#ifndef PRINTER_WORKER_H
+#define PRINTER_WORKER_H
 
-#include <QtGlobal>
+#include "qtwebenginecoreglobal_p.h"
 
-namespace content {
-class WebContents;
-}
+#include <QSharedPointer>
+
+QT_BEGIN_NAMESPACE
+class QPrinter;
+QT_END_NAMESPACE
 
 namespace QtWebEngineCore {
 
-class WebContentsAdapterClient;
-
-class RenderViewObserverHostQt : public content::WebContentsObserver
+class Q_WEBENGINECORE_PRIVATE_EXPORT PrinterWorker : public QObject
 {
+    Q_OBJECT
 public:
-    RenderViewObserverHostQt(content::WebContents *, WebContentsAdapterClient *adapterClient);
-    void fetchDocumentMarkup(quint64 requestId);
-    void fetchDocumentInnerText(quint64 requestId);
+    PrinterWorker(QSharedPointer<QByteArray> data, QPrinter *printer);
+    virtual ~PrinterWorker();
+
+public Q_SLOTS:
+    void print();
+
+Q_SIGNALS:
+    void resultReady(bool success);
 
 private:
-    bool OnMessageReceived(const IPC::Message &message) override;
-    void onDidFetchDocumentMarkup(quint64 requestId, const base::string16 &markup);
-    void onDidFetchDocumentInnerText(quint64 requestId, const base::string16 &innerText);
+    Q_DISABLE_COPY(PrinterWorker)
 
-    WebContentsAdapterClient *m_adapterClient;
+    QSharedPointer<QByteArray> m_data;
+    QPrinter *m_printer;
 };
 
 } // namespace QtWebEngineCore
 
-#endif // RENDER_VIEW_OBSERVER_HOST_QT_H
+Q_DECLARE_METATYPE(QtWebEngineCore::PrinterWorker *)
+
+#endif // PRINTER_WORKER_H

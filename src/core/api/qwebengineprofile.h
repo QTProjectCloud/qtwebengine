@@ -40,7 +40,7 @@
 #ifndef QWEBENGINEPROFILE_H
 #define QWEBENGINEPROFILE_H
 
-#include <QtWebEngineWidgets/qtwebenginewidgetsglobal.h>
+#include <QtWebEngineCore/qtwebenginecoreglobal.h>
 
 #include <QtCore/qobject.h>
 #include <QtCore/qscopedpointer.h>
@@ -57,15 +57,13 @@ class QWebEngineClientCertificateStore;
 class QWebEngineCookieStore;
 class QWebEngineDownloadRequest;
 class QWebEngineNotification;
-class QWebEnginePage;
-class QWebEnginePagePrivate;
 class QWebEngineProfilePrivate;
 class QWebEngineSettings;
 class QWebEngineScriptCollection;
 class QWebEngineUrlRequestInterceptor;
 class QWebEngineUrlSchemeHandler;
 
-class QWEBENGINEWIDGETS_EXPORT QWebEngineProfile : public QObject {
+class Q_WEBENGINECORE_EXPORT QWebEngineProfile : public QObject {
     Q_OBJECT
 public:
     explicit QWebEngineProfile(QObject *parent = Q_NULLPTR);
@@ -143,6 +141,7 @@ public:
     void setDownloadPath(const QString &path);
 
     void setNotificationPresenter(std::function<void(std::unique_ptr<QWebEngineNotification>)> notificationPresenter);
+    std::function<void(std::unique_ptr<QWebEngineNotification>)> notificationPresenter();
 
     QWebEngineClientCertificateStore *clientCertificateStore();
 

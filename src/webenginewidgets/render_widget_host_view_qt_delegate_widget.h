@@ -51,7 +51,7 @@ QT_BEGIN_NAMESPACE
 class QWebEnginePage;
 class QWebEngineView;
 class QWebEngineViewAccessible;
-class QWebEnginePagePrivate;
+class QWebEngineViewPrivate;
 QT_END_NAMESPACE
 
 namespace QtWebEngineCore {
@@ -95,6 +95,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
+    void adapterClientChanged(WebContentsAdapterClient *client) override;
 
 private slots:
     void onWindowPosChanged();
@@ -102,7 +103,7 @@ private slots:
     void removeParentBeforeParentDelete();
 
 private:
-    friend QWebEnginePagePrivate;
+    friend QWebEngineViewPrivate;
 
     RenderWidgetHostViewQtDelegateClient *m_client;
     QScopedPointer<QQuickItem> m_rootItem;

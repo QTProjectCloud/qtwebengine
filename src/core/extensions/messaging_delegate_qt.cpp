@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -37,45 +37,20 @@
 **
 ****************************************************************************/
 
-#ifndef QWEBENGINEHISTORY_P_H
-#define QWEBENGINEHISTORY_P_H
+#include "messaging_delegate_qt.h"
 
-//
-//  W A R N I N G
-//  -------------
-//
-// This file is not part of the Qt API.  It exists purely as an
-// implementation detail.  This header file may change from version to
-// version without notice, or even be removed.
-//
-// We mean it.
-//
+#include <QtGlobal>
 
-#include <QtCore/qshareddata.h>
+namespace extensions {
 
-QT_BEGIN_NAMESPACE
-class QWebEnginePagePrivate;
-
-class QWebEngineHistoryItemPrivate : public QSharedData
+MessagingDelegateQt::MessagingDelegateQt()
 {
-public:
-    QWebEngineHistoryItemPrivate(QWebEnginePagePrivate *page = 0, int index = 0);
+}
 
-    QWebEnginePagePrivate *page;
-    int index;
-};
-
-class QWebEngineHistoryPrivate
+std::unique_ptr<base::DictionaryValue> MessagingDelegateQt::MaybeGetTabInfo(content::WebContents *web_contents)
 {
-public:
-    QWebEngineHistoryPrivate(QWebEnginePagePrivate *page);
-    ~QWebEngineHistoryPrivate();
-    void updateItems() const;
+    Q_UNUSED(web_contents);
+    return nullptr;
+}
 
-    QWebEnginePagePrivate *page;
-    mutable QList<QWebEngineHistoryItem> items;
-};
-
-QT_END_NAMESPACE
-
-#endif // QWEBENGINEHISTORY_P_H
+} // namespace extensions

@@ -14,6 +14,7 @@ QML_TESTS = \
     $$PWD/data/tst_desktopBehaviorLoadHtml.qml \
     $$PWD/data/tst_findText.qml \
     $$PWD/data/tst_focusOnNavigation.qml \
+    $$PWD/data/tst_fullScreenRequest.qml \
     $$PWD/data/tst_geopermission.qml \
     $$PWD/data/tst_getUserMedia.qml \
     $$PWD/data/tst_keyboardEvents.qml \
@@ -55,7 +56,8 @@ qtConfig(webengine-testsupport) {
         $$PWD/data/tst_inputMethod.qml \
         $$PWD/data/tst_linkHovered.qml \
         $$PWD/data/tst_loadFail.qml \
-        $$PWD/data/tst_mouseClick.qml
+        $$PWD/data/tst_mouseClick.qml \
+        $$PWD/data/tst_viewSoure.qml
      qtHaveModule(quickcontrols): QML_TESTS += $$PWD/data/tst_javaScriptDialogs.qml
 } else {
     PLUGIN_EXTENSION = .so

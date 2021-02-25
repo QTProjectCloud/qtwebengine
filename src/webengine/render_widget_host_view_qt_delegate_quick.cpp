@@ -43,15 +43,17 @@
 
 #include "qquickwebengineview_p.h"
 #include "qquickwebengineview_p_p.h"
+
 #include <QGuiApplication>
-#include <QOpenGLContext>
-#include <QQuickPaintedItem>
 #include <QQuickWindow>
-#include <QSurfaceFormat>
+#include <QSGImageNode>
 #include <QVariant>
 #include <QWindow>
-#include <QtQuick/qsgimagenode.h>
-#include <QtQuick/private/qquickwindow_p.h>
+
+#if defined(Q_OS_MACOS) && QT_CONFIG(opengl)
+#include <QOpenGLContext>
+#include <QSurfaceFormat>
+#endif
 
 namespace QtWebEngineCore {
 
@@ -75,14 +77,13 @@ RenderWidgetHostViewQtDelegateQuick::~RenderWidgetHostViewQtDelegateQuick()
     QQuickWebEngineViewPrivate::bindViewAndWidget(nullptr, this);
 }
 
-void RenderWidgetHostViewQtDelegateQuick::initAsPopup(const QRect &r)
+void RenderWidgetHostViewQtDelegateQuick::initAsPopup(const QRect &screenRect)
 {
+    //note this is called when there is no windowing system
+    //otherwsie see RenderWidgetHostViewQtDelegateQuickWindow
     Q_ASSERT(m_isPopup && parentItem());
-    QRectF rect(parentItem()->mapRectFromScene(r));
-    setX(rect.x());
-    setY(rect.y());
-    setWidth(rect.width());
-    setHeight(rect.height());
+    setPosition(screenRect.topLeft());
+    setSize(screenRect.size());
     setVisible(true);
 }
 
@@ -351,7 +352,7 @@ QSGNode *RenderWidgetHostViewQtDelegateQuick::updatePaintNode(QSGNode *oldNode, 
         if (comp->hasAlphaChannel())
             texOpts.setFlag(QQuickWindow::TextureHasAlphaChannel);
         int texId = comp->textureId();
-        node->setTexture(QPlatformInterface::QSGOpenGLTexture::fromNative(texId, win, texSize, texOpts));
+        node->setTexture(QNativeInterface::QSGOpenGLTexture::fromNative(texId, win, texSize, texOpts));
         node->setTextureCoordinatesTransform(QSGImageNode::MirrorVertically);
     } else {
         Q_UNREACHABLE();
@@ -384,6 +385,12 @@ void RenderWidgetHostViewQtDelegateQuick::onHide()
 {
     QFocusEvent event(QEvent::FocusOut, Qt::OtherFocusReason);
     m_client->forwardEvent(&event);
+}
+
+void RenderWidgetHostViewQtDelegateQuick::adapterClientChanged(WebContentsAdapterClient *client)
+{
+    QQuickWebEngineViewPrivate::bindViewAndWidget(
+            static_cast<QQuickWebEngineViewPrivate *>(client)->q_func(), this);
 }
 
 #if QT_CONFIG(accessibility)

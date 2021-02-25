@@ -227,6 +227,7 @@ RenderWidgetHostViewQtDelegate *QQuickWebEngineViewPrivate::CreateRenderWidgetHo
         return wrapperWindow;
     }
     quickDelegate->setParentItem(q);
+    quickDelegate->show();
     return quickDelegate;
 }
 
@@ -236,9 +237,6 @@ void QQuickWebEngineViewPrivate::contextMenuRequested(QWebEngineContextMenuReque
 
     m_contextMenuRequest = request;
 
-    // FIXME: we most liekly do not need to make any copy here
-    auto *r = new QWebEngineContextMenuRequest(
-            new QWebEngineContextMenuRequestPrivate(*request->d.data()));
     QQmlEngine *engine = qmlEngine(q);
 
     // TODO: this is a workaround for QTBUG-65044
@@ -246,6 +244,9 @@ void QQuickWebEngineViewPrivate::contextMenuRequested(QWebEngineContextMenuReque
         return;
 
     // mark the object for gc by creating temporary jsvalue
+    // FIXME: we most likely do not need to make any copy here
+    auto *r = new QWebEngineContextMenuRequest(
+            new QWebEngineContextMenuRequestPrivate(*request->d.data()));
     engine->newQObject(r);
     Q_EMIT q->contextMenuRequested(r);
 
@@ -507,9 +508,11 @@ Q_STATIC_ASSERT(static_cast<int>(WebEngineError::NoErrorDomain) == static_cast<i
 Q_STATIC_ASSERT(static_cast<int>(WebEngineError::CertificateErrorDomain) == static_cast<int>(QQuickWebEngineView::CertificateErrorDomain));
 Q_STATIC_ASSERT(static_cast<int>(WebEngineError::DnsErrorDomain) == static_cast<int>(QQuickWebEngineView::DnsErrorDomain));
 
-void QQuickWebEngineViewPrivate::loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode, const QString &errorDescription)
+void QQuickWebEngineViewPrivate::loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode,
+                                              const QString &errorDescription, bool triggersErrorPage)
 {
     Q_Q(QQuickWebEngineView);
+    Q_UNUSED(triggersErrorPage);
 
     if (isErrorPage) {
 #if QT_CONFIG(webengine_testsupport)
@@ -728,12 +731,6 @@ void QQuickWebEngineViewPrivate::printRequested()
     QTimer::singleShot(0, q, [q]() {
         Q_EMIT q->printRequested();
     });
-}
-
-void QQuickWebEngineViewPrivate::widgetChanged(RenderWidgetHostViewQtDelegate *newWidgetBase)
-{
-    Q_Q(QQuickWebEngineView);
-    bindViewAndWidget(q, static_cast<RenderWidgetHostViewQtDelegateQuick *>(newWidgetBase));
 }
 
 void QQuickWebEngineViewPrivate::findTextFinished(const QWebEngineFindTextResult &result)
@@ -1289,25 +1286,16 @@ void QQuickWebEngineViewPrivate::requestGeometryChange(const QRect &geometry, co
     Q_EMIT q->geometryChangeRequested(geometry, frameGeometry);
 }
 
-void QQuickWebEngineViewPrivate::startDragging(const content::DropData &dropData,
-                                               Qt::DropActions allowedActions,
-                                               const QPixmap &pixmap, const QPoint &offset)
-{
-#if !QT_CONFIG(draganddrop)
-    Q_UNUSED(dropData);
-    Q_UNUSED(allowedActions);
-    Q_UNUSED(pixmap);
-    Q_UNUSED(offset);
-#else
-    adapter->startDragging(q_ptr->window(), dropData, allowedActions, pixmap, offset);
-#endif // QT_CONFIG(draganddrop)
-}
-
-bool QQuickWebEngineViewPrivate::supportsDragging() const
+QObject *QQuickWebEngineViewPrivate::dragSource() const
 {
     // QTBUG-57516
     // Fixme: This is just a band-aid workaround.
-    return QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::MultipleWindows);
+#if !QT_CONFIG(draganddrop)
+  return QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::MultipleWindows) ?
+    q_ptr->window : nullptr;
+#else
+  return nullptr;
+#endif
 }
 
 bool QQuickWebEngineViewPrivate::isEnabled() const

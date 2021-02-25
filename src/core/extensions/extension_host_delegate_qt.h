@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -36,28 +36,42 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-#ifndef RENDER_VIEW_OBSERVER_QT_H
-#define RENDER_VIEW_OBSERVER_QT_H
 
-#include "content/public/renderer/render_view_observer.h"
+#ifndef EXTENSION_HOST_DELEGATE_QT_H
+#define EXTENSION_HOST_DELEGATE_QT_H
 
-#include <QtGlobal>
+#include "extensions/browser/extension_host_delegate.h"
 
-class RenderViewObserverQt : public content::RenderViewObserver
+namespace extensions {
+
+class ExtensionHostDelegateQt : public ExtensionHostDelegate
 {
 public:
-    RenderViewObserverQt(content::RenderView *render_view);
+    ExtensionHostDelegateQt();
 
-private:
-    void onFetchDocumentMarkup(quint64 requestId);
-    void onFetchDocumentInnerText(quint64 requestId);
-    void onSetBackgroundColor(quint32 color);
-
-    void OnDestruct() override;
-
-    bool OnMessageReceived(const IPC::Message &message) override;
-
-    DISALLOW_COPY_AND_ASSIGN(RenderViewObserverQt);
+    // EtensionHostDelegate implementation.
+    void OnExtensionHostCreated(content::WebContents *web_contents) override;
+    void OnRenderViewCreatedForBackgroundPage(ExtensionHost *host) override;
+    content::JavaScriptDialogManager *GetJavaScriptDialogManager() override;
+    void CreateTab(std::unique_ptr<content::WebContents> web_contents,
+                   const std::string &extension_id,
+                   WindowOpenDisposition disposition,
+                   const gfx::Rect &initial_rect,
+                   bool user_gesture) override;
+    void ProcessMediaAccessRequest(content::WebContents *web_contents,
+                                   const content::MediaStreamRequest &request,
+                                   content::MediaResponseCallback callback,
+                                   const Extension *extension) override;
+    bool CheckMediaAccessPermission(content::RenderFrameHost *render_frame_host,
+                                    const GURL &security_origin,
+                                    blink::mojom::MediaStreamType type,
+                                    const Extension *extension) override;
+    content::PictureInPictureResult EnterPictureInPicture(content::WebContents *web_contents,
+                                                          const viz::SurfaceId &surface_id,
+                                                          const gfx::Size &natural_size) override;
+    void ExitPictureInPicture() override;
 };
 
-#endif // RENDER_VIEW_OBSERVER_QT_H
+} // namespace extensions
+
+#endif // EXTENSION_HOST_DELEGATE_QT_H
