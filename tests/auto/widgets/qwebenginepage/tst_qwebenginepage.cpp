@@ -19,7 +19,7 @@
     Boston, MA 02110-1301, USA.
 */
 
-#include "../util.h"
+#include <util.h>
 #include <QtWebEngineCore/qtwebenginecore-config.h>
 #include <QByteArray>
 #include <QClipboard>
@@ -599,6 +599,39 @@ void tst_QWebEnginePage::acceptNavigationRequestNavigationType()
         << QWebEnginePage::NavigationTypeReload
         << QWebEnginePage::NavigationTypeTyped
         << QWebEnginePage::NavigationTypeRedirect;
+
+    // client side redirect
+    page.load(QUrl("qrc:///resources/redirect.html"));
+    QTRY_COMPARE_WITH_TIMEOUT(loadSpy.count(), 7, 20000);
+    QTRY_COMPARE(page.navigations.count(), 8);
+    expectedList += { QWebEnginePage::NavigationTypeTyped, QWebEnginePage::NavigationTypeRedirect };
+
+    // server side redirect
+    HttpServer server;
+    server.setResourceDirs({ ":/resources" });
+    connect(&server, &HttpServer::newRequest, &server, [&] (HttpReqRep *r) {
+        if (r->requestMethod() == "GET") {
+            if (r->requestPath() == "/redirect1.html") {
+                r->setResponseHeader("Location", server.url("/redirect2.html").toEncoded());
+                r->setResponseBody("<html><body>Redirect1</body></html>");
+                r->sendResponse(307); // Internal server redirect
+            } else if (r->requestPath() == "/redirect2.html") {
+                r->setResponseHeader("Location", server.url("/content.html").toEncoded());
+                r->setResponseBody("<html><body>Redirect2</body></html>");
+                r->sendResponse(301); // Moved permanently
+            }
+        }
+    });
+    QVERIFY(server.start());
+    page.load(QUrl(server.url("/redirect1.html")));
+    QTRY_COMPARE_WITH_TIMEOUT(loadSpy.count(), 8, 20000);
+    QTRY_COMPARE(page.navigations.count(), 11);
+    expectedList += {
+        QWebEnginePage::NavigationTypeTyped,
+        QWebEnginePage::NavigationTypeRedirect,
+        QWebEnginePage::NavigationTypeRedirect
+    };
+
     QVERIFY(expectedList.count() == page.navigations.count());
     for (int i = 0; i < expectedList.count(); ++i) {
         QCOMPARE(page.navigations[i].type, expectedList[i]);
@@ -2212,10 +2245,15 @@ void tst_QWebEnginePage::setHtmlWithBaseURL()
     // This tests if baseUrl is indeed affecting the relative paths from resources.
     // As we are using a local file as baseUrl, its security origin should be able to load local resources.
 
-    if (!QDir(TESTS_SOURCE_DIR).exists())
-        W_QSKIP(QString("This test requires access to resources found in '%1'").arg(TESTS_SOURCE_DIR).toLatin1().constData(), SkipAll);
+    if (!QDir(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath()).exists())
+        W_QSKIP(QString("This test requires access to resources found in '%1'")
+                        .arg(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath())
+                        .toLatin1()
+                        .constData(),
+                SkipAll);
 
-    QDir::setCurrent(TESTS_SOURCE_DIR);
+    QDir::setCurrent(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath());
+    qDebug()<<QDir::current();
 
     QString html("<html><body><p>hello world</p><img src='resources/image2.png'/></body></html>");
 
@@ -2224,7 +2262,9 @@ void tst_QWebEnginePage::setHtmlWithBaseURL()
     // in few seconds, the image should be completey loaded
     QSignalSpy spy(&page, SIGNAL(loadFinished(bool)));
 
-    page.setHtml(html, QUrl::fromLocalFile(TESTS_SOURCE_DIR));
+    page.setHtml(html,
+                 QUrl::fromLocalFile(
+                         QString("%1/foo.html").arg(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath())));
     QSignalSpy spyFinished(&page, &QWebEnginePage::loadFinished);
     QVERIFY(spyFinished.wait());
     QCOMPARE(spy.count(), 1);
@@ -2913,11 +2953,7 @@ void tst_QWebEnginePage::loadInSignalHandlers()
     URLSetter setter(m_page, signal, type, urlForSetter);
     QSignalSpy spy(&setter, &URLSetter::finished);
     m_page->load(url);
-    // every loadStarted() call should have also loadFinished()
-    if (signal == URLSetter::LoadStarted)
-        QTRY_COMPARE(spy.count(), 2);
-    else
-        QTRY_COMPARE(spy.count(), 1);
+    QTRY_COMPARE(spy.count(), 1);
     QCOMPARE(m_page->url(), urlForSetter);
 }
 
@@ -3158,7 +3194,8 @@ void tst_QWebEnginePage::viewSourceURL_data()
     QTest::newRow("view-source:") << QUrl("view-source:") << true << QUrl("view-source:") << QUrl("about:blank") << QString("view-source:");
     QTest::newRow("view-source:about:blank") << QUrl("view-source:about:blank") << true << QUrl("view-source:about:blank") << QUrl("about:blank") << QString("view-source:about:blank");
 
-    QString localFilePath = QString("%1qwebenginepage/resources/test1.html").arg(TESTS_SOURCE_DIR);
+    QString localFilePath =
+            QString("%1/resources/test1.html").arg(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath());
     QUrl testLocalUrl = QUrl(QString("view-source:%1").arg(QUrl::fromLocalFile(localFilePath).toString()));
     QUrl testLocalUrlWithoutScheme = QUrl(QString("view-source:%1").arg(localFilePath));
     QTest::newRow(testLocalUrl.toString().toStdString().c_str()) << testLocalUrl << true << testLocalUrl << QUrl::fromLocalFile(localFilePath) << QString("test1.html");
@@ -3174,8 +3211,12 @@ void tst_QWebEnginePage::viewSourceURL_data()
 
 void tst_QWebEnginePage::viewSourceURL()
 {
-    if (!QDir(TESTS_SOURCE_DIR).exists())
-        W_QSKIP(QString("This test requires access to resources found in '%1'").arg(TESTS_SOURCE_DIR).toLatin1().constData(), SkipAll);
+    if (!QDir(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath()).exists())
+        W_QSKIP(QString("This test requires access to resources found in '%1'")
+                        .arg(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath())
+                        .toLatin1()
+                        .constData(),
+                SkipAll);
 
     QFETCH(QUrl, userInputUrl);
     QFETCH(bool, loadSucceed);
@@ -4068,8 +4109,7 @@ void tst_QWebEnginePage::setLifecycleStateWithDevTools()
     devToolsPage.setLifecycleState(QWebEnginePage::LifecycleState::Discarded);
     devToolsPage.setInspectedPage(&inspectedPage);
     QCOMPARE(devToolsPage.lifecycleState(), QWebEnginePage::LifecycleState::Active);
-    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 2, 90000);
-    QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(false));
+    QTRY_COMPARE_WITH_TIMEOUT(devToolsSpy.count(), 1, 90000);
     QCOMPARE(devToolsSpy.takeFirst().value(0), QVariant(true));
     // keep DevTools open
 

@@ -1,5 +1,5 @@
-include($$QTWEBENGINE_OUT_ROOT/src/webengine/qtwebengine-config.pri) # workaround for QTBUG-68093
-QT_FOR_CONFIG += webengine-private
+include($$QTWEBENGINE_OUT_ROOT/src/webenginequick/qtwebenginequick-config.pri) # workaround for QTBUG-68093
+QT_FOR_CONFIG += webenginequick-private
 
 include(../tests.pri)
 
@@ -12,6 +12,7 @@ QML_TESTS = \
     $$PWD/data/tst_activeFocusOnPress.qml \
     $$PWD/data/tst_audioMuted.qml \
     $$PWD/data/tst_desktopBehaviorLoadHtml.qml \
+    $$PWD/data/tst_download.qml \
     $$PWD/data/tst_findText.qml \
     $$PWD/data/tst_focusOnNavigation.qml \
     $$PWD/data/tst_fullScreenRequest.qml \
@@ -49,7 +50,7 @@ qtConfig(ssl) {
     include(../../shared/http.pri)
 }
 
-qtConfig(webengine-testsupport) {
+qtConfig(webenginequick-testsupport) {
     QML_TESTS += \
         $$PWD/data/tst_favicon.qml \
         $$PWD/data/tst_faviconDownload.qml \
@@ -81,7 +82,6 @@ qtConfig(webengine-testsupport) {
 qtHaveModule(quickcontrols) {
     QML_TESTS += \
         $$PWD/data/tst_contextMenu.qml \
-        $$PWD/data/tst_download.qml \
         $$PWD/data/tst_filePicker.qml
 }
 

@@ -46,6 +46,10 @@
 #include <QtCore/QPoint>
 #include <QScopedPointer>
 
+namespace extensions {
+class MimeHandlerViewGuestDelegateQt;
+}
+
 namespace QtWebEngineCore {
 class RenderViewContextMenuQt;
 class WebContentsViewQt;
@@ -124,8 +128,8 @@ public:
     Q_PROPERTY(QString misspelledWord READ misspelledWord CONSTANT FINAL)
     Q_PROPERTY(QStringList spellCheckerSuggestions READ spellCheckerSuggestions CONSTANT FINAL)
     Q_PROPERTY(bool accepted READ isAccepted WRITE setAccepted FINAL)
-    Q_PROPERTY(MediaFlags mediaFlags READ mediaFlags CONSTANT FINAL REVISION 1)
-    Q_PROPERTY(EditFlags editFlags READ editFlags CONSTANT FINAL REVISION 1)
+    Q_PROPERTY(MediaFlags mediaFlags READ mediaFlags CONSTANT FINAL REVISION(1,1))
+    Q_PROPERTY(EditFlags editFlags READ editFlags CONSTANT FINAL REVISION(1,1))
 
     virtual ~QWebEngineContextMenuRequest();
     QPoint position() const;
@@ -156,6 +160,7 @@ private:
     QScopedPointer<QWebEngineContextMenuRequestPrivate> d;
     friend class QtWebEngineCore::WebContentsViewQt;
     friend class QtWebEngineCore::RenderViewContextMenuQt;
+    friend class extensions::MimeHandlerViewGuestDelegateQt;
     friend class QQuickWebEngineViewPrivate;
     friend class QQuickWebEngineView;
     friend class ContextMenuRequestJSWrapper;

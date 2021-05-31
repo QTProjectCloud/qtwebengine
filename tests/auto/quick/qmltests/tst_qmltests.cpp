@@ -35,9 +35,9 @@
 #include <QtCore/QScopedPointer>
 #include <QTemporaryDir>
 #include <QtQuickTest/quicktest.h>
-#include <QtWebEngine/QQuickWebEngineProfile>
-#include <QQmlEngine>
-#include "qt_webengine_quicktest.h"
+#include <QtWebEngineQuick/QQuickWebEngineProfile>
+#include <QtQml/QQmlEngine>
+#include <qt_webengine_quicktest.h>
 
 #if defined(Q_OS_LINUX) && defined(QT_DEBUG)
 #include <fcntl.h>
@@ -151,17 +151,19 @@ int main(int argc, char **argv)
     QTEST_SET_MAIN_SOURCE_PATH
     qmlRegisterSingletonType<HttpServer>("Test.Shared", 1, 0, "HttpServer", [&] (QQmlEngine *, QJSEngine *) {
         auto server = new HttpServer;
-        server->setResourceDirs({ TESTS_SHARED_DATA_DIR, QUICK_TEST_SOURCE_DIR });
+        server->setResourceDirs(
+                { server->sharedDataDir(),
+                  QDir(QT_TESTCASE_SOURCEDIR).canonicalPath() + QLatin1String("/data") });
         return server;
     });
 
 #if QT_CONFIG(ssl)
     qmlRegisterSingletonType<HttpsServer>(
             "Test.Shared", 1, 0, "HttpsServer",
-            [&](QQmlEngine *, QJSEngine *) { return new HttpsServer; });
+            [&](QQmlEngine *, QJSEngine *) { return new HttpsServer(":/resources/server.pem",":/resources/server.key"); });
 #endif
 
-    int i = quick_test_main(argc, argv, "qmltests", QUICK_TEST_SOURCE_DIR);
+    int i = quick_test_main(argc, argv, "qmltests",  qPrintable(QT_TESTCASE_BUILDDIR + QLatin1String("/webengine.qmltests")));
     return i;
 }
 

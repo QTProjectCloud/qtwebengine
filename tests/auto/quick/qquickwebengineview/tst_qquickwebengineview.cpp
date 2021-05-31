@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 #include "testwindow.h"
-#include "util.h"
+#include "quickutil.h"
 
 #include <QScopedPointer>
 #include <QtCore/qelapsedtimer.h>
@@ -37,11 +37,11 @@
 #include <QtGui/qpa/qwindowsysteminterface.h>
 #include <QtQml/QQmlEngine>
 #include <QtTest/QtTest>
-#include <QtWebEngine/QQuickWebEngineProfile>
-#include <QtWebEngine/QQuickWebEngineScriptCollection>
+#include <QtWebEngineQuick/QQuickWebEngineProfile>
+#include <QtWebEngineQuick/QQuickWebEngineScriptCollection>
 #include <QtGui/private/qinputmethod_p.h>
-#include <QtWebEngine/private/qquickwebengineview_p.h>
-#include <QtWebEngine/private/qquickwebenginesettings_p.h>
+#include <QtWebEngineQuick/private/qquickwebengineview_p.h>
+#include <QtWebEngineQuick/private/qquickwebenginesettings_p.h>
 #include <QtWebEngineCore/private/qtwebenginecore-config_p.h>
 #include <qpa/qplatforminputcontext.h>
 
@@ -111,7 +111,7 @@ tst_QQuickWebEngineView::tst_QQuickWebEngineView()
     QtWebEngine::initialize();
     QQuickWebEngineProfile::defaultProfile()->setOffTheRecord(true);
 
-    m_testSourceDirPath = QString::fromLocal8Bit(TESTS_SOURCE_DIR);
+    m_testSourceDirPath = QDir(QT_TESTCASE_SOURCEDIR).canonicalPath();
     if (!m_testSourceDirPath.endsWith(QLatin1Char('/')))
         m_testSourceDirPath.append(QLatin1Char('/'));
 
@@ -198,7 +198,7 @@ void tst_QQuickWebEngineView::loadEmptyPageViewVisible()
 
 void tst_QQuickWebEngineView::loadEmptyPageViewHidden()
 {
-    QSignalSpy loadSpy(webEngineView(), SIGNAL(loadingChanged(QQuickWebEngineLoadRequest*)));
+    QSignalSpy loadSpy(webEngineView(), SIGNAL(loadingChanged(QWebEngineLoadRequest)));
 
     webEngineView()->setUrl(urlFromTestPath("html/basic_page.html"));
     QVERIFY(waitForLoadSucceeded(webEngineView()));
@@ -208,7 +208,7 @@ void tst_QQuickWebEngineView::loadEmptyPageViewHidden()
 
 void tst_QQuickWebEngineView::loadNonexistentFileUrl()
 {
-    QSignalSpy loadSpy(webEngineView(), SIGNAL(loadingChanged(QQuickWebEngineLoadRequest*)));
+    QSignalSpy loadSpy(webEngineView(), SIGNAL(loadingChanged(QWebEngineLoadRequest)));
 
     webEngineView()->setUrl(urlFromTestPath("html/file_that_does_not_exist.html"));
     QVERIFY(waitForLoadFailed(webEngineView()));
@@ -1169,7 +1169,7 @@ void tst_QQuickWebEngineView::javascriptClipboard()
 }
 
 void tst_QQuickWebEngineView::setProfile() {
-    QSignalSpy loadSpy(webEngineView(), SIGNAL(loadingChanged(QQuickWebEngineLoadRequest*)));
+    QSignalSpy loadSpy(webEngineView(), SIGNAL(loadingChanged(QWebEngineLoadRequest)));
     webEngineView()->setUrl(urlFromTestPath("html/basic_page.html"));
     QVERIFY(waitForLoadSucceeded(webEngineView()));
     QCOMPARE(loadSpy.size(), 2);
@@ -1252,3 +1252,4 @@ static QByteArrayList params = QByteArrayList()
 
 W_QTEST_MAIN(tst_QQuickWebEngineView, params)
 #include "tst_qquickwebengineview.moc"
+#include "moc_quickutil.cpp"

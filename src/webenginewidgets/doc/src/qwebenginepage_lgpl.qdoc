@@ -381,6 +381,12 @@
     used as part of the user interface, and not to display external data, for example, when
     displaying a list of results.
 
+    \note This function is not called for fragment navigation on the same page. Such navigation,
+    for example, happens by clicking a link to a '#fragment' within the page. It does not trigger
+    a load to a different document, even though it changes page's url and adds history entry.
+    It only serves as a shortcut to scroll within the page. Hence, no delegation of this navigation
+    type is expected to happen.
+
     \note The loading process is started and the loadStarted() signal is emitted
     \e before the request is accepted or rejected. Therefore, a loadFinished()
     signal that returns \c false is to be expected even after delegating the
@@ -514,7 +520,7 @@
 
 /*!
     \fn void QWebEnginePage::certificateError(const QWebEngineCertificateError & certificateError)
-    This function is called when an invalid certificate error is raised while loading a given request.
+    This signal is emitted when an invalid certificate error is raised while loading a given request.
 
     The \a certificateError parameter contains information about the certificate and details of the error,
     it also provides the way to ignore the error and complete the request or stop loading

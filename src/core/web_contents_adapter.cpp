@@ -84,11 +84,11 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
-#include "content/public/common/page_state.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/buildflags/buildflags.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
+#include "third_party/blink/public/common/page_state/page_state.h"
 #include "third_party/blink/public/common/peerconnection/webrtc_ip_handling_policy.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/frame/media_player_action.mojom.h"
@@ -356,7 +356,7 @@ static void deserializeNavigationHistory(QDataStream &input, int *currentIndex, 
             nullptr);
 
         entry->SetTitle(toString16(title));
-        entry->SetPageState(content::PageState::CreateFromEncodedData(std::string(pageState.data(), pageState.size())));
+        entry->SetPageState(blink::PageState::CreateFromEncodedData(std::string(pageState.data(), pageState.size())));
         entry->SetHasPostData(hasPostData);
         entry->SetOriginalRequestURL(toGurl(originalRequestUrl));
         entry->SetIsOverridingUserAgent(isOverridingUserAgent);
@@ -382,6 +382,7 @@ void Navigate(WebContentsAdapter *adapter, const content::NavigationController::
     adapter->webContents()->GetController().LoadURLWithParams(params);
     adapter->focusIfNecessary();
     adapter->resetSelection();
+    adapter->findTextHelper()->stopFinding();
 }
 
 void NavigateTask(QWeakPointer<WebContentsAdapter> weakAdapter, const content::NavigationController::LoadURLParams &params)
@@ -435,7 +436,7 @@ QSharedPointer<WebContentsAdapter> WebContentsAdapter::createFromSerializedNavig
         // TODO(joth): This is duplicated from chrome/.../session_restore.cc and
         // should be shared e.g. in  NavigationController. http://crbug.com/68222
         const int id = newWebContents->GetMainFrame()->GetProcess()->GetID();
-        const content::PageState& pageState = controller.GetActiveEntry()->GetPageState();
+        const blink::PageState& pageState = controller.GetActiveEntry()->GetPageState();
         const std::vector<base::FilePath>& filePaths = pageState.GetReferencedFiles();
         for (std::vector<base::FilePath>::const_iterator file = filePaths.begin(); file != filePaths.end(); ++file)
             content::ChildProcessSecurityPolicy::GetInstance()->GrantReadFile(id, *file);
@@ -551,7 +552,7 @@ void WebContentsAdapter::initialize(content::SiteInstance *site)
 
 void WebContentsAdapter::initializeRenderPrefs()
 {
-    blink::mojom::RendererPreferences *rendererPrefs = m_webContents->GetMutableRendererPrefs();
+    blink::RendererPreferences *rendererPrefs = m_webContents->GetMutableRendererPrefs();
     rendererPrefs->use_custom_colors = true;
     // Qt returns a flash time (the whole cycle) in ms, chromium expects just the interval in
     // seconds
@@ -716,8 +717,7 @@ void WebContentsAdapter::load(const QWebEngineHttpRequest &request)
             m_adapterClient->loadFinished(false, request.url(), false,
                                           net::ERR_DISALLOWED_URL_SCHEME,
                                           QCoreApplication::translate("WebContentsAdapter",
-                                          "HTTP-POST data can only be sent over HTTP(S) protocol"),
-                                          false);
+                                          "HTTP-POST data can only be sent over HTTP(S) protocol"));
             return;
         }
         params.post_data = network::ResourceRequestBody::CreateFromBytes(
@@ -772,7 +772,7 @@ void WebContentsAdapter::setContent(const QByteArray &data, const QString &mimeT
 
     GURL dataUrlToLoad(urlString);
     if (dataUrlToLoad.spec().size() > url::kMaxURLChars) {
-        m_adapterClient->loadFinished(false, baseUrl, false, net::ERR_ABORTED, QString(), false);
+        m_adapterClient->loadFinished(false, baseUrl, false, net::ERR_ABORTED, QString());
         return;
     }
     content::NavigationController::LoadURLParams params((dataUrlToLoad));
@@ -1546,7 +1546,15 @@ void WebContentsAdapter::startDragging(QObject *dragSource, const content::DropD
     QObject::disconnect(onDestroyed);
     if (dValid) {
         if (m_webContents) {
-            content::RenderViewHost *rvh = m_webContents->GetRenderViewHost();
+            // This is the quickest and (at the moment) the most safe solution to not break guest views when
+            // dropping data into them. We don't even try to support dropping into PDF input fields,
+            // since it's not working in Chrome right now.
+            content::WebContents *targetWebContents = m_webContents.get();
+            std::vector<content::WebContents *> innerWebContents = m_webContents->GetInnerWebContents();
+            if (!innerWebContents.empty())
+                targetWebContents = innerWebContents[0];
+
+            content::RenderViewHost *rvh = targetWebContents->GetRenderViewHost();
             if (rvh) {
                 rvh->GetWidget()->DragSourceEndedAt(gfx::PointF(m_lastDragClientPos.x(), m_lastDragClientPos.y()),
                                                     gfx::PointF(m_lastDragScreenPos.x(), m_lastDragScreenPos.y()),
@@ -1985,6 +1993,7 @@ void WebContentsAdapter::discard()
     if (m_webContents->IsLoading()) {
         m_webContentsDelegate->didFailLoad(m_webContentsDelegate->url(webContents()), net::Error::ERR_ABORTED,
                                            QStringLiteral("Discarded"));
+        m_webContentsDelegate->DidStopLoading();
     }
 
     content::WebContents::CreateParams createParams(m_profileAdapter->profile());

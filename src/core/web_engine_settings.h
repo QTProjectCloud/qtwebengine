@@ -51,8 +51,8 @@
 #ifndef WEB_ENGINE_SETTINGS_H
 #define WEB_ENGINE_SETTINGS_H
 
-#include "qtwebenginecoreglobal_p.h"
-#include "qwebenginesettings.h"
+#include <QtWebEngineCore/private/qtwebenginecoreglobal_p.h>
+#include <QtWebEngineCore/qwebenginesettings.h>
 #include <QScopedPointer>
 #include <QHash>
 #include <QUrl>
@@ -64,9 +64,7 @@ class WebContents;
 }
 
 namespace blink {
-namespace mojom {
-class RendererPreferences;
-}
+struct RendererPreferences;
 namespace web_pref {
 struct WebPreferences;
 }
@@ -115,7 +113,7 @@ private:
     void initDefaults();
     void doApply();
     void applySettingsToWebPreferences(blink::web_pref::WebPreferences *);
-    bool applySettingsToRendererPreferences(blink::mojom::RendererPreferences *);
+    bool applySettingsToRendererPreferences(blink::RendererPreferences *);
     void setWebContentsAdapter(WebContentsAdapter *adapter) { m_adapter = adapter; }
 
     WebContentsAdapter* m_adapter;

@@ -33,7 +33,7 @@
 #include <QtQml/QQmlEngine>
 #include <QtTest/QtTest>
 #include <QQuickWebEngineProfile>
-#include <QtWebEngine/private/qquickwebengineview_p.h>
+#include <QtWebEngineQuick/private/qquickwebengineview_p.h>
 
 #define INSPECTOR_SERVER_PORT "23654"
 static const QUrl s_inspectorServerHttpBaseUrl("http://localhost:" INSPECTOR_SERVER_PORT);
@@ -70,8 +70,6 @@ tst_InspectorServer::tst_InspectorServer()
 void tst_InspectorServer::prepareWebViewComponent()
 {
     static QQmlEngine* engine = new QQmlEngine(this);
-    engine->addImportPath(QString::fromUtf8(IMPORT_DIR));
-
     m_component.reset(new QQmlComponent(engine, this));
 
     m_component->setData(QByteArrayLiteral("import QtQuick 2.0\n"
@@ -119,8 +117,9 @@ QJsonArray tst_InspectorServer::fetchPageList() const
 
 void tst_InspectorServer::testPageList()
 {
-    const QUrl testPageUrl = QUrl::fromLocalFile(QLatin1String(TESTS_SOURCE_DIR "/html/basic_page.html"));
-    QSignalSpy loadSpy(webView(), SIGNAL(loadingChanged(QQuickWebEngineLoadRequest*)));
+    const QUrl testPageUrl = QUrl::fromLocalFile(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath()
+                                                 + QLatin1String("/html/basic_page.html"));
+    QSignalSpy loadSpy(webView(), SIGNAL(loadingChanged(QWebEngineLoadRequest)));
     webView()->setUrl(testPageUrl);
     QTRY_VERIFY(loadSpy.size() && !webView()->isLoading());
 
@@ -132,8 +131,9 @@ void tst_InspectorServer::testPageList()
 
 void tst_InspectorServer::testRemoteDebuggingMessage()
 {
-    const QUrl testPageUrl = QUrl::fromLocalFile(QLatin1String(TESTS_SOURCE_DIR "/html/basic_page.html"));
-    QSignalSpy loadSpy(webView(), SIGNAL(loadingChanged(QQuickWebEngineLoadRequest*)));
+    const QUrl testPageUrl = QUrl::fromLocalFile(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath()
+                                                 + QLatin1String("/html/basic_page.html"));
+    QSignalSpy loadSpy(webView(), SIGNAL(loadingChanged(QWebEngineLoadRequest)));
     webView()->setUrl(testPageUrl);
     QTRY_VERIFY(loadSpy.size() && !webView()->isLoading());
 
@@ -166,8 +166,9 @@ void tst_InspectorServer::testRemoteDebuggingMessage()
 
 void tst_InspectorServer::openRemoteDebuggingSession()
 {
-    const QUrl testPageUrl = QUrl::fromLocalFile(QLatin1String(TESTS_SOURCE_DIR "/html/basic_page.html"));
-    QSignalSpy loadSpy(webView(), SIGNAL(loadingChanged(QQuickWebEngineLoadRequest*)));
+    const QUrl testPageUrl = QUrl::fromLocalFile(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath()
+                                                 + QLatin1String("/html/basic_page.html"));
+    QSignalSpy loadSpy(webView(), SIGNAL(loadingChanged(QWebEngineLoadRequest)));
     webView()->setUrl(testPageUrl);
     QTRY_VERIFY(loadSpy.size() && !webView()->isLoading());
 

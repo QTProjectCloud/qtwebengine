@@ -41,16 +41,18 @@ TestWebEngineView {
     property var loadRequestArray: []
 
     testSupport: WebEngineTestSupport {
-        errorPage.onLoadingChanged: {
+        errorPage.onLoadingChanged: function(load) {
             loadRequestArray.push({
-               "status": loadRequest.status,
+               "status": load.status,
+               "url": load.url
             })
         }
     }
 
-    onLoadingChanged: {
+    onLoadingChanged: function(load) {
         loadRequestArray.push({
-            "status": loadRequest.status,
+            "status": load.status,
+            "url": load.url
         });
     }
 
@@ -76,7 +78,7 @@ TestWebEngineView {
     }
 
     TestCase {
-        id: test
+        id: testCase
         name: "WebEngineViewSource"
 
         function init() {
@@ -109,14 +111,16 @@ TestWebEngineView {
             WebEngine.settings.errorPageEnabled = true
             webEngineView.url = row.userInputUrl;
 
+
             if (row.loadSucceed) {
-                tryVerify(function() { return loadRequestArray.length >= 2 });
+                tryVerify(function() { return loadRequestArray.length == 2 });
                 compare(loadRequestArray[1].status, WebEngineView.LoadSucceededStatus);
             } else {
-                tryVerify(function() { return loadRequestArray.length >= 2 });
-                compare(loadRequestArray[1].status, WebEngineView.LoadFailedStatus);
-                tryVerify(function() { return loadRequestArray.length == 4 });
-                compare(loadRequestArray[3].status, WebEngineView.LoadSucceededStatus);
+                tryVerify(function() { return loadRequestArray.length == 4 }, 90000);
+                // error page load is done inside main load through test support
+                compare(loadRequestArray[2].status, WebEngineView.LoadSucceededStatus);
+                compare(loadRequestArray[2].url, "chrome-error://chromewebdata/")
+                compare(loadRequestArray[3].status, WebEngineView.LoadFailedStatus);
             }
             tryVerify(function() { return titleChangedSpy.count == 1; });
 

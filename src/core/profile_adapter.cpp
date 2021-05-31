@@ -87,6 +87,9 @@ inline QString buildLocationFromStandardPath(const QString &standardPath, const 
 
 namespace QtWebEngineCore {
 
+// static
+QPointer<ProfileAdapter> ProfileAdapter::s_profileForGlobalCertificateVerification;
+
 ProfileAdapter::ProfileAdapter(const QString &storageName):
       m_name(storageName)
     , m_offTheRecord(storageName.isEmpty())
@@ -121,6 +124,7 @@ ProfileAdapter::ProfileAdapter(const QString &storageName):
 
 ProfileAdapter::~ProfileAdapter()
 {
+    content::BrowserContext::NotifyWillBeDestroyed(m_profile.data());
     while (!m_webContentsAdapterClients.isEmpty()) {
        m_webContentsAdapterClients.first()->releaseProfile();
     }
@@ -131,7 +135,9 @@ ProfileAdapter::~ProfileAdapter()
     }
 #if QT_CONFIG(ssl)
     delete m_clientCertificateStore;
+    m_clientCertificateStore = nullptr;
 #endif
+    WebEngineContext::flushMessages();
 }
 
 void ProfileAdapter::setStorageName(const QString &storageName)
@@ -582,7 +588,7 @@ void ProfileAdapter::setHttpAcceptLanguage(const QString &httpAcceptLanguage)
     std::vector<content::WebContentsImpl *> list = content::WebContentsImpl::GetAllWebContents();
     for (content::WebContentsImpl *web_contents : list) {
         if (web_contents->GetBrowserContext() == m_profile.data()) {
-            blink::mojom::RendererPreferences *rendererPrefs = web_contents->GetMutableRendererPrefs();
+            blink::RendererPreferences *rendererPrefs = web_contents->GetMutableRendererPrefs();
             rendererPrefs->accept_languages = http_accept_language;
             web_contents->SyncRendererPrefs();
         }
@@ -651,26 +657,26 @@ void ProfileAdapter::setUseForGlobalCertificateVerification(bool enable)
     if (m_usedForGlobalCertificateVerification == enable)
         return;
 
-    static QPointer<ProfileAdapter> profileForglobalCertificateVerification;
-
     m_usedForGlobalCertificateVerification = enable;
     if (enable) {
-        if (profileForglobalCertificateVerification) {
-            profileForglobalCertificateVerification->m_usedForGlobalCertificateVerification = false;
-            if (!m_profile->m_profileIOData->isClearHttpCacheInProgress())
-                profileForglobalCertificateVerification->m_profile->m_profileIOData->resetNetworkContext();
-            for (auto *client : qAsConst(profileForglobalCertificateVerification->m_clients))
+        if (s_profileForGlobalCertificateVerification) {
+            s_profileForGlobalCertificateVerification->m_usedForGlobalCertificateVerification = false;
+            for (auto *client : qAsConst(s_profileForGlobalCertificateVerification->m_clients))
                 client->useForGlobalCertificateVerificationChanged();
+        } else {
+            // OCSP enabled
+            for (auto adapter : qAsConst(WebEngineContext::current()->m_profileAdapters))
+                adapter->m_profile->m_profileIOData->resetNetworkContext();
         }
-        profileForglobalCertificateVerification = this;
+        s_profileForGlobalCertificateVerification = this;
     } else {
-        Q_ASSERT(profileForglobalCertificateVerification);
-        Q_ASSERT(profileForglobalCertificateVerification == this);
-        profileForglobalCertificateVerification = nullptr;
+        Q_ASSERT(s_profileForGlobalCertificateVerification);
+        Q_ASSERT(s_profileForGlobalCertificateVerification == this);
+        s_profileForGlobalCertificateVerification = nullptr;
+        // OCSP disabled
+        for (auto adapter : qAsConst(WebEngineContext::current()->m_profileAdapters))
+            adapter->m_profile->m_profileIOData->resetNetworkContext();
     }
-
-    if (!m_profile->m_profileIOData->isClearHttpCacheInProgress())
-        m_profile->m_profileIOData->resetNetworkContext();
 }
 
 bool ProfileAdapter::isUsedForGlobalCertificateVerification() const

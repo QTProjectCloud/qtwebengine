@@ -47,7 +47,6 @@
 #include "ppapi/buildflags/buildflags.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
-#include "qtwebengine/browser/plugin.mojom.h"
 #include "third_party/blink/public/web/web_plugin_params.h"
 #endif
 
@@ -93,17 +92,16 @@ public:
     void RenderThreadStarted() override;
     void ExposeInterfacesToBrowser(mojo::BinderMap* binders) override;
     void RenderFrameCreated(content::RenderFrame *render_frame) override;
-    bool HasErrorPage(int http_status_code) override;
 
     void PrepareErrorPage(content::RenderFrame *render_frame,
                           const blink::WebURLError &error,
                           const std::string &http_method,
                           std::string *error_html) override;
     void PrepareErrorPageForHttpStatusError(content::RenderFrame *render_frame,
-                                            const GURL &unreachable_url,
+                                            const blink::WebURLError &error,
                                             const std::string &http_method,
                                             int http_status,
-                                            std::string *error_html) override;
+                                            std::string *error_html)  override;
 
     uint64_t VisitedLinkHash(const char *canonical_url, size_t length) override;
     bool IsLinkVisited(uint64_t linkHash) override;
@@ -113,6 +111,10 @@ public:
     void RunScriptsAtDocumentStart(content::RenderFrame *render_frame) override;
     void RunScriptsAtDocumentEnd(content::RenderFrame *render_frame) override;
     void RunScriptsAtDocumentIdle(content::RenderFrame *render_frame) override;
+    bool IsPluginHandledExternally(content::RenderFrame *embedder_frame,
+                                   const blink::WebElement &plugin_element,
+                                   const GURL &original_url,
+                                   const std::string &original_mime_type);
     bool OverrideCreatePlugin(content::RenderFrame *render_frame,
                               const blink::WebPluginParams &params,
                               blink::WebPlugin **plugin) override;
@@ -125,14 +127,6 @@ public:
                          const url::Origin *initiator_origin,
                          GURL *new_url,
                          bool *attach_same_site_cookies) override;
-
-    bool RequiresWebComponentsV0(const GURL &url) override;
-
-#if BUILDFLAG(ENABLE_PLUGINS)
-    static blink::WebPlugin* CreatePlugin(content::RenderFrame* render_frame,
-                                          const blink::WebPluginParams& params,
-                                          const chrome::mojom::PluginInfo& plugin_info);
-#endif
 
 #if QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
     chrome::WebRtcLoggingAgentImpl *GetWebRtcLoggingAgent();

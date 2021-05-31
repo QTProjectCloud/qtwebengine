@@ -27,7 +27,7 @@
 ****************************************************************************/
 
 #include "testwindow.h"
-#include "util.h"
+#include "quickutil.h"
 
 #include <QGuiApplication>
 #include <QtQml/QQmlEngine>
@@ -93,7 +93,7 @@ inline QQuickWebEngineView *tst_QQuickWebEngineDefaultSurfaceFormat::webEngineVi
 
 QUrl tst_QQuickWebEngineDefaultSurfaceFormat::urlFromTestPath(const char *localFilePath)
 {
-    QString testSourceDirPath = QString::fromLocal8Bit(TESTS_SOURCE_DIR);
+    QString testSourceDirPath = QDir(QT_TESTCASE_SOURCEDIR).canonicalPath();
     if (!testSourceDirPath.endsWith(QLatin1Char('/')))
         testSourceDirPath.append(QLatin1Char('/'));
 
@@ -126,10 +126,10 @@ void tst_QQuickWebEngineDefaultSurfaceFormat::customDefaultSurfaceFormat()
 
     QObject::connect(
         view,
-        &QQuickWebEngineView::loadingChanged, [](QQuickWebEngineLoadRequest* request)
+        &QQuickWebEngineView::loadingChanged, [](const QWebEngineLoadRequest &request)
         {
-            if (request->status() == QQuickWebEngineView::LoadSucceededStatus
-               || request->status() == QQuickWebEngineView::LoadFailedStatus)
+            if (request.status() == QWebEngineLoadRequest::LoadSucceededStatus
+               || request.status() == QWebEngineLoadRequest::LoadFailedStatus)
                 QTimer::singleShot(100, qApp, &QCoreApplication::quit);
         }
     );

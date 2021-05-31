@@ -115,7 +115,6 @@ SOURCES = \
         renderer/web_engine_page_render_frame.cpp \
         renderer/render_configuration.cpp \
         renderer/user_resource_controller.cpp \
-        renderer/plugins/plugin_placeholder_qt.cpp \
         renderer_host/web_engine_page_host.cpp \
         renderer_host/user_resource_controller_host.cpp \
         resource_bundle_qt.cpp \
@@ -221,7 +220,6 @@ HEADERS = \
         renderer/web_engine_page_render_frame.h \
         renderer/render_configuration.h \
         renderer/user_resource_controller.h \
-        renderer/plugins/plugin_placeholder_qt.h \
         renderer_host/web_engine_page_host.h \
         renderer_host/user_resource_controller_host.h \
         request_controller.h \
@@ -254,18 +252,14 @@ qtConfig(webengine-ozone-x11) {
 qtConfig(webengine-pepper-plugins) {
 
     SOURCES += \
-        renderer_host/pepper/pepper_flash_browser_host_qt.cpp \
         renderer_host/pepper/pepper_host_factory_qt.cpp \
         renderer_host/pepper/pepper_isolated_file_system_message_filter.cpp \
-        renderer/pepper/pepper_flash_renderer_host_qt.cpp \
         renderer/pepper/pepper_renderer_host_factory_qt.cpp \
         renderer/plugins/loadable_plugin_placeholder_qt.cpp
 
     HEADERS += \
-        renderer_host/pepper/pepper_flash_browser_host_qt.h \
         renderer_host/pepper/pepper_host_factory_qt.h \
         renderer_host/pepper/pepper_isolated_file_system_message_filter.h \
-        renderer/pepper/pepper_flash_renderer_host_qt.h \
         renderer/pepper/pepper_renderer_host_factory_qt.h \
         renderer/plugins/loadable_plugin_placeholder_qt.h
 }
@@ -331,6 +325,8 @@ qtConfig(webengine-extensions) {
         extensions/extensions_browser_client_qt.cpp \
         extensions/messaging_delegate_qt.cpp \
         extensions/mime_handler_view_guest_delegate_qt.cpp \
+        extensions/pdf_iframe_navigation_throttle_qt.cpp \
+        extensions/plugin_service_filter_qt.cpp \
         net/plugin_response_interceptor_url_loader_throttle.cpp \
         renderer/extensions/extensions_dispatcher_delegate_qt.cpp \
         renderer/extensions/extensions_renderer_client_qt.cpp \
@@ -349,6 +345,8 @@ qtConfig(webengine-extensions) {
         extensions/extensions_browser_client_qt.h \
         extensions/messaging_delegate_qt.h \
         extensions/mime_handler_view_guest_delegate_qt.h \
+        extensions/pdf_iframe_navigation_throttle_qt.h \
+        extensions/plugin_service_filter_qt.h \
         net/plugin_response_interceptor_url_loader_throttle.h \
         renderer/extensions/extensions_dispatcher_delegate_qt.h \
         renderer/extensions/extensions_renderer_client_qt.h \

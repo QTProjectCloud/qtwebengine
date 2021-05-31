@@ -18,10 +18,9 @@
     the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
     Boston, MA 02110-1301, USA.
 */
-
+#include <QtWebEngineCore/private/qtwebenginecore-config_p.h>
 #include <qtest.h>
-#include "../util.h"
-
+#include <util.h>
 #include <private/qinputmethod_p.h>
 #include <qpainter.h>
 #include <qpagelayout.h>
@@ -42,6 +41,7 @@
 #include <QQuickItem>
 #include <QQuickWidget>
 #include <QtWebEngineCore/qwebenginehttprequest.h>
+#include <QScopeGuard>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QStyle>
@@ -123,6 +123,8 @@ private Q_SLOTS:
     void doNotBreakLayout();
 
     void changeLocale();
+    void mixLangLocale_data();
+    void mixLangLocale();
     void inputMethodsTextFormat_data();
     void inputMethodsTextFormat();
     void keyboardEvents();
@@ -160,6 +162,7 @@ private Q_SLOTS:
     void jsKeyboardEvent_data();
     void jsKeyboardEvent();
     void deletePage();
+    void autoDeleteOnExternalPageDelete();
     void closeOpenerTab();
     void switchPage();
     void setPageDeletesImplicitPage();
@@ -359,17 +362,21 @@ void tst_QWebEngineView::reusePage_data()
 
 void tst_QWebEngineView::reusePage()
 {
-    if (!QDir(TESTS_SOURCE_DIR).exists())
-        W_QSKIP(QString("This test requires access to resources found in '%1'").arg(TESTS_SOURCE_DIR).toLatin1().constData(), SkipAll);
+    if (!QDir(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath()).exists())
+        W_QSKIP(QString("This test requires access to resources found in '%1'")
+                        .arg(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath())
+                        .toLatin1()
+                        .constData(),
+                SkipAll);
 
-    QDir::setCurrent(TESTS_SOURCE_DIR);
+    QDir::setCurrent(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath());
 
     QFETCH(QString, html);
     QWebEngineView* view1 = new QWebEngineView;
     QPointer<QWebEnginePage> page = new QWebEnginePage;
     view1->setPage(page.data());
     page.data()->settings()->setAttribute(QWebEngineSettings::PluginsEnabled, true);
-    page->setHtml(html, QUrl::fromLocalFile(TESTS_SOURCE_DIR));
+    page->setHtml(html, QUrl::fromLocalFile(QDir(QT_TESTCASE_SOURCEDIR).canonicalPath()));
     if (html.contains("</embed>")) {
         // some reasonable time for the PluginStream to feed test.swf to flash and start painting
         QSignalSpy spyFinished(view1, &QWebEngineView::loadFinished);
@@ -1208,6 +1215,49 @@ void tst_QWebEngineView::changeLocale()
     errorLines = toPlainTextSync(viewDE.page()).split(QRegularExpression("[\r\n]"), QString::SkipEmptyParts);
 #endif
     QCOMPARE(errorLines.first().toUtf8(), QByteArrayLiteral("Die Website ist nicht erreichbar"));
+}
+
+void tst_QWebEngineView::mixLangLocale_data()
+{
+    QTest::addColumn<QString>("locale");
+    QTest::addColumn<QByteArray>("formattedNumber");
+    QTest::newRow("en_DK") << "en-DK" << QByteArray("1.234.567.890");
+    QTest::newRow("de")    << "de"    << QByteArray("1.234.567.890");
+    QTest::newRow("de_CH") << "de-CH" << QByteArray("1’234’567’890");
+    QTest::newRow("eu_ES") << "eu-ES" << QByteArray("1.234.567.890");
+    QTest::newRow("hu_HU") << "hu-HU" << QByteArray("1\xC2\xA0""234\xC2\xA0""567\xC2\xA0""890"); // no-break spaces
+}
+
+void tst_QWebEngineView::mixLangLocale()
+{
+    QFETCH(QString, locale);
+    QFETCH(QByteArray, formattedNumber);
+
+    QLocale::setDefault(QLocale(locale));
+
+    QWebEngineView view;
+    QSignalSpy loadSpy(&view, &QWebEngineView::loadFinished);
+
+    bool terminated = false;
+    auto sc = connect(view.page(), &QWebEnginePage::renderProcessTerminated, [&] () { terminated = true; });
+
+    view.load(QUrl("qrc:///resources/dummy.html"));
+    QTRY_VERIFY(terminated || loadSpy.count() == 1);
+
+    QVERIFY2(!terminated,
+        qPrintable(QString("Locale [%1] terminated: %2, loaded: %3").arg(locale).arg(terminated).arg(loadSpy.count())));
+    QVERIFY(loadSpy.first().first().toBool());
+
+    QString content = toPlainTextSync(view.page());
+    QVERIFY2(!content.isEmpty() && content.contains("test content"), qPrintable(content));
+
+    QCOMPARE(evaluateJavaScriptSync(view.page(), "navigator.language").toString(), QLocale().bcp47Name());
+
+    if (locale == "eu-ES")
+        QEXPECT_FAIL("", "Basque number formatting is somehow dependent on environment", Continue);
+    QCOMPARE(evaluateJavaScriptSync(view.page(), "Number(1234567890).toLocaleString()").toByteArray(), formattedNumber);
+
+    QLocale::setDefault(QLocale("en"));
 }
 
 void tst_QWebEngineView::inputMethodsTextFormat_data()
@@ -3113,7 +3163,7 @@ void tst_QWebEngineView::webUIURLs_data()
     QTest::newRow("media-engagement") << QUrl("chrome://media-engagement") << false;
     QTest::newRow("media-internals") << QUrl("chrome://media-internals") << true;
     QTest::newRow("net-export") << QUrl("chrome://net-export") << false;
-    QTest::newRow("net-internals") << QUrl("chrome://net-internals") << false;
+    QTest::newRow("net-internals") << QUrl("chrome://net-internals") << true;
     QTest::newRow("network-error") << QUrl("chrome://network-error") << false;
     QTest::newRow("network-errors") << QUrl("chrome://network-errors") << true;
     QTest::newRow("ntp-tiles-internals") << QUrl("chrome://ntp-tiles-internals") << false;
@@ -3146,8 +3196,12 @@ void tst_QWebEngineView::webUIURLs_data()
     QTest::newRow("usb-internals") << QUrl("chrome://usb-internals") << false;
     QTest::newRow("user-actions") << QUrl("chrome://user-actions") << true;
     QTest::newRow("version") << QUrl("chrome://version") << false;
+#if QT_CONFIG(webengine_webrtc)
     QTest::newRow("webrtc-internals") << QUrl("chrome://webrtc-internals") << true;
+#if QT_CONFIG(webengine_extensions)
     QTest::newRow("webrtc-logs") << QUrl("chrome://webrtc-logs") << true;
+#endif // QT_CONFIG(webengine_extensions)
+#endif // QT_CONFIG(webengine_webrtc)
 }
 
 void tst_QWebEngineView::webUIURLs()
@@ -3262,6 +3316,26 @@ void tst_QWebEngineView::deletePage()
     QSignalSpy spy(view.page(), &QWebEnginePage::loadFinished);
     view.page()->load(QStringLiteral("about:blank"));
     QTRY_VERIFY(spy.count());
+}
+
+void tst_QWebEngineView::autoDeleteOnExternalPageDelete()
+{
+    QPointer<QWebEngineView> view = new QWebEngineView;
+    QPointer<QWebEnginePage> page = new QWebEnginePage;
+    auto sg = qScopeGuard([&] () { delete view; delete page; });
+
+    QSignalSpy spy(page, &QWebEnginePage::loadFinished);
+    view->setPage(page);
+    view->show();
+    view->resize(320, 240);
+    page->load(QUrl("about:blank"));
+    QTRY_VERIFY(spy.count());
+    QVERIFY(page->parent() != view);
+
+    auto sc = QObject::connect(page, &QWebEnginePage::destroyed, view, &QWebEngineView::deleteLater);
+    QTimer::singleShot(0, page, &QObject::deleteLater);
+    QTRY_VERIFY(!page);
+    QTRY_VERIFY(!view);
 }
 
 class TestView : public QWebEngineView {

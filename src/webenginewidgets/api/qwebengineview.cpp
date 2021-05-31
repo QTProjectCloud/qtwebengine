@@ -40,8 +40,8 @@
 #include "qwebengineview.h"
 #include "qwebengineview_p.h"
 
-#include "qwebenginepage_p.h"
-#include "qwebengineprofile.h"
+#include <QtWebEngineCore/private/qwebenginepage_p.h>
+#include <QtWebEngineCore/qwebengineprofile.h>
 #include "render_widget_host_view_qt_delegate_widget.h"
 #include "web_contents_adapter.h"
 #include "file_picker_controller.h"
@@ -88,7 +88,15 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
 
     if (oldPage) {
         oldPage->setVisible(false);
-        oldPage->disconnect(q);
+        QObject::disconnect(oldPage, &QWebEnginePage::titleChanged, q, &QWebEngineView::titleChanged);
+        QObject::disconnect(oldPage, &QWebEnginePage::urlChanged, q, &QWebEngineView::urlChanged);
+        QObject::disconnect(oldPage, &QWebEnginePage::iconUrlChanged, q, &QWebEngineView::iconUrlChanged);
+        QObject::disconnect(oldPage, &QWebEnginePage::iconChanged, q, &QWebEngineView::iconChanged);
+        QObject::disconnect(oldPage, &QWebEnginePage::loadStarted, q, &QWebEngineView::loadStarted);
+        QObject::disconnect(oldPage, &QWebEnginePage::loadProgress, q, &QWebEngineView::loadProgress);
+        QObject::disconnect(oldPage, &QWebEnginePage::loadFinished, q, &QWebEngineView::loadFinished);
+        QObject::disconnect(oldPage, &QWebEnginePage::selectionChanged, q, &QWebEngineView::selectionChanged);
+        QObject::disconnect(oldPage, &QWebEnginePage::renderProcessTerminated, q, &QWebEngineView::renderProcessTerminated);
     }
 
     if (newPage) {
@@ -931,7 +939,7 @@ bool QContextMenuBuilder::isFullScreenMode()
 void QContextMenuBuilder::addMenuItem(ContextMenuItem menuItem)
 {
     QPointer<QWebEnginePage> thisRef(m_view->page());
-    QAction *action = 0;
+    QAction *action = nullptr;
 
     switch (menuItem) {
     case ContextMenuItem::Back:

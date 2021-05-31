@@ -25,7 +25,7 @@
 #include <qwebenginescriptcollection.h>
 #include <qwebenginesettings.h>
 #include <qwebengineview.h>
-#include "../util.h"
+#include <util.h>
 #if QT_CONFIG(webengine_webchannel)
 #include <QWebChannel>
 #endif
@@ -74,6 +74,7 @@ private Q_SLOTS:
     void noTransportWithoutWebChannel();
     void scriptsInNestedIframes();
     void matchQrcUrl();
+    void injectionOrder();
 };
 
 void tst_QWebEngineScript::domEditing()
@@ -415,7 +416,7 @@ void tst_QWebEngineScript::webChannel()
     QCOMPARE(testObject.text(), QStringLiteral("test"));
 
     if (worldId != QWebEngineScript::MainWorld)
-        QCOMPARE(evaluateJavaScriptSync(&page, "qt.webChannelTransport"), QVariant(QVariant::Invalid));
+        QCOMPARE(evaluateJavaScriptSync(&page, "qt.webChannelTransport"), QVariant());
 }
 #endif
 void tst_QWebEngineScript::noTransportWithoutWebChannel()
@@ -423,11 +424,11 @@ void tst_QWebEngineScript::noTransportWithoutWebChannel()
     QWebEnginePage page;
     page.setHtml(QStringLiteral("<html><body></body></html>"));
 
-    QCOMPARE(evaluateJavaScriptSync(&page, "qt.webChannelTransport"), QVariant(QVariant::Invalid));
+    QCOMPARE(evaluateJavaScriptSync(&page, "qt.webChannelTransport"), QVariant());
     page.triggerAction(QWebEnginePage::Reload);
     QSignalSpy spyFinished(&page, &QWebEnginePage::loadFinished);
     QVERIFY(spyFinished.wait());
-    QCOMPARE(evaluateJavaScriptSync(&page, "qt.webChannelTransport"), QVariant(QVariant::Invalid));
+    QCOMPARE(evaluateJavaScriptSync(&page, "qt.webChannelTransport"), QVariant());
 }
 
 void tst_QWebEngineScript::scriptsInNestedIframes()
@@ -488,9 +489,9 @@ void tst_QWebEngineScript::webChannelResettingAndUnsetting()
 
     // There should be no webChannelTransport yet.
     QCOMPARE(evaluateJavaScriptSyncInWorld(&page, "qt.webChannelTransport", QWebEngineScript::MainWorld),
-             QVariant(QVariant::Invalid));
+             QVariant());
     QCOMPARE(evaluateJavaScriptSyncInWorld(&page, "qt.webChannelTransport", QWebEngineScript::ApplicationWorld),
-             QVariant(QVariant::Invalid));
+             QVariant());
 
     QWebChannel channel;
     page.setWebChannel(&channel, QWebEngineScript::MainWorld);
@@ -499,13 +500,13 @@ void tst_QWebEngineScript::webChannelResettingAndUnsetting()
     QCOMPARE(evaluateJavaScriptSyncInWorld(&page, "qt.webChannelTransport", QWebEngineScript::MainWorld),
              QVariant(QVariantMap()));
     QCOMPARE(evaluateJavaScriptSyncInWorld(&page, "qt.webChannelTransport", QWebEngineScript::ApplicationWorld),
-             QVariant(QVariant::Invalid));
+             QVariant());
 
     page.setWebChannel(&channel, QWebEngineScript::ApplicationWorld);
 
     // Now it should have moved to ApplicationWorld.
     QCOMPARE(evaluateJavaScriptSyncInWorld(&page, "qt.webChannelTransport", QWebEngineScript::MainWorld),
-             QVariant(QVariant::Invalid));
+             QVariant());
     QCOMPARE(evaluateJavaScriptSyncInWorld(&page, "qt.webChannelTransport", QWebEngineScript::ApplicationWorld),
              QVariant(QVariantMap()));
 
@@ -513,9 +514,9 @@ void tst_QWebEngineScript::webChannelResettingAndUnsetting()
 
     // And now it should be gone again.
     QCOMPARE(evaluateJavaScriptSyncInWorld(&page, "qt.webChannelTransport", QWebEngineScript::MainWorld),
-             QVariant(QVariant::Invalid));
+             QVariant());
     QCOMPARE(evaluateJavaScriptSyncInWorld(&page, "qt.webChannelTransport", QWebEngineScript::ApplicationWorld),
-             QVariant(QVariant::Invalid));
+             QVariant());
 }
 
 void tst_QWebEngineScript::webChannelWithExistingQtObject()
@@ -523,7 +524,7 @@ void tst_QWebEngineScript::webChannelWithExistingQtObject()
     QWebEnginePage page;
 
     evaluateJavaScriptSync(&page, "qt = 42");
-    QCOMPARE(evaluateJavaScriptSync(&page, "qt.webChannelTransport"), QVariant(QVariant::Invalid));
+    QCOMPARE(evaluateJavaScriptSync(&page, "qt.webChannelTransport"), QVariant());
 
     QWebChannel channel;
     page.setWebChannel(&channel);
@@ -612,6 +613,54 @@ document.title = 'New title';
     QCOMPARE(page.title(), "A");
     loadSync(&page, QUrl("qrc:/resources/title_b.html"));
     QCOMPARE(page.title(), "New title");
+}
+
+// Add many scripts and check order of execution.
+void tst_QWebEngineScript::injectionOrder()
+{
+    QWebEngineProfile profile;
+    class Page : public QWebEnginePage
+    {
+    public:
+        Page(QWebEngineProfile *profile) : QWebEnginePage(profile) {}
+        QVector<QString> log;
+
+    protected:
+        void javaScriptConsoleMessage(JavaScriptConsoleMessageLevel, const QString &message, int,
+                                      const QString &) override
+        {
+            log.append(message);
+        }
+    } page(&profile);
+    QWebEngineScript::InjectionPoint points[] = {
+        QWebEngineScript::DocumentCreation,
+        QWebEngineScript::DocumentReady,
+        QWebEngineScript::Deferred,
+    };
+    int nPoints = 3;
+    int nCollections = 2;
+    int nScripts = 5;
+
+    QVector<QString> expected;
+    for (int iPoint = 0; iPoint != nPoints; ++iPoint) {
+        for (int iCollection = 0; iCollection != nCollections; ++iCollection) {
+            for (int iScript = 0; iScript != nScripts; ++iScript) {
+                QWebEngineScript script;
+                script.setName(QString("%1%2%3").arg(iPoint).arg(iCollection).arg(iScript));
+                expected.append(script.name());
+                script.setInjectionPoint(points[iPoint]);
+                script.setWorldId(QWebEngineScript::MainWorld);
+                script.setSourceCode(QStringLiteral("console.error('%1');").arg(script.name()));
+                if (iCollection == 0)
+                    profile.scripts()->insert(script);
+                else
+                    page.scripts().insert(script);
+            }
+        }
+    }
+
+    page.load(QUrl("qrc:/resources/test_iframe_inner.html"));
+    QTRY_COMPARE(page.log, expected);
 }
 
 QTEST_MAIN(tst_QWebEngineScript)

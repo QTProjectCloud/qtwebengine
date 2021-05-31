@@ -45,6 +45,7 @@ TestWebEngineView {
     }
 
     TestCase {
+        id: testCase
         name: 'CertificateError'
         when: windowShown
 
@@ -55,6 +56,7 @@ TestWebEngineView {
                 request.sendResponse()
             })
             view.settings.errorPageEnabled = false
+            view.profile.useForGlobalCertificateVerification = true
         }
 
         function init() {
@@ -112,23 +114,6 @@ TestWebEngineView {
             compare(data.expectedContent, view.getBodyText())
 
             view.certificateError.disconnect(handleCertificateError)
-        }
-
-        function test_fatalError() {
-            var handleCertificateError = function(error) {
-                verify(!error.overrideable);
-                // QQuickWebEngineViewPrivate::allowCertificateError() will implicitly reject
-                // fatal errors and it should not crash if already rejected in handler.
-                error.rejectCertificate();
-            }
-            view.certificateError.connect(handleCertificateError);
-
-            view.url = Qt.resolvedUrl('https://revoked.badssl.com');
-            if (!view.waitForLoadFailed(10000))
-                skip("Couldn't load page from network, skipping test.");
-            compare(spyError.count, 1);
-
-            view.certificateError.disconnect(handleCertificateError);
         }
     }
 }

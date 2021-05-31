@@ -45,16 +45,8 @@
 #include "ozone/gl_surface_glx_qt.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_surface_glx.h"
-#include "ui/gfx/x/x11_types.h"
 
 namespace gl {
-
-bool GLSurfaceGLXQt::s_initialized = false;
-
-GLSurfaceGLXQt::~GLSurfaceGLXQt()
-{
-    Destroy();
-}
 
 void GLSurfaceGLX::ShutdownOneOff()
 {
@@ -115,12 +107,24 @@ const char* GLSurfaceGLX::GetGLXExtensions()
     return GLSurfaceQt::g_extensions;
 }
 
+
+bool GLSurfaceGLXQt::s_initialized = false;
+
+GLSurfaceGLXQt::GLSurfaceGLXQt(const gfx::Size& size)
+    : GLSurfaceQt(size),
+      m_surfaceBuffer(0)
+{
+}
+
+GLSurfaceGLXQt::~GLSurfaceGLXQt()
+{
+    Destroy();
+}
+
 bool GLSurfaceGLXQt::InitializeOneOff()
 {
     if (s_initialized)
         return true;
-
-    XInitThreads();
 
     g_display = GLContextHelper::getXDisplay();
     if (!g_display) {
@@ -197,12 +201,6 @@ void GLSurfaceGLXQt::Destroy()
         glXDestroyPbuffer(static_cast<Display*>(g_display), m_surfaceBuffer);
         m_surfaceBuffer = 0;
     }
-}
-
-GLSurfaceGLXQt::GLSurfaceGLXQt(const gfx::Size& size)
-    : GLSurfaceQt(size),
-      m_surfaceBuffer(0)
-{
 }
 
 void* GLSurfaceGLXQt::GetHandle()

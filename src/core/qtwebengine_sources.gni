@@ -75,6 +75,8 @@ source_set("qtwebengine_sources") {
     "//chrome/browser/custom_handlers/protocol_handler_registry.h",
     "//chrome/browser/custom_handlers/protocol_handler_registry_factory.cc",
     "//chrome/browser/custom_handlers/protocol_handler_registry_factory.h",
+    "//chrome/browser/devtools/devtools_eye_dropper.cc",
+    "//chrome/browser/devtools/devtools_eye_dropper.h",
     "//chrome/browser/media/webrtc/desktop_media_list.h",
     "//chrome/browser/net/chrome_mojo_proxy_resolver_factory.cc",
     "//chrome/browser/net/chrome_mojo_proxy_resolver_factory.h",
@@ -88,6 +90,8 @@ source_set("qtwebengine_sources") {
     "//chrome/browser/ui/webui/devtools_ui.h",
     "//chrome/browser/ui/webui/devtools_ui_data_source.cc",
     "//chrome/browser/ui/webui/devtools_ui_data_source.h",
+    "//chrome/browser/ui/webui/net_internals/net_internals_ui.cc",
+    "//chrome/browser/ui/webui/net_internals/net_internals_ui.h",
     "//chrome/browser/ui/webui/quota_internals/quota_internals_handler.cc",
     "//chrome/browser/ui/webui/quota_internals/quota_internals_handler.h",
     "//chrome/browser/ui/webui/quota_internals/quota_internals_proxy.cc",
@@ -175,8 +179,6 @@ source_set("qtwebengine_sources") {
 
   if (enable_plugins) {
       sources += [
-        "//chrome/browser/renderer_host/pepper/pepper_flash_clipboard_message_filter.cc",
-        "//chrome/browser/renderer_host/pepper/pepper_flash_clipboard_message_filter.h",
         "//chrome/renderer/pepper/pepper_flash_font_file_host.cc",
         "//chrome/renderer/pepper/pepper_flash_font_file_host.h",
         "//chrome/renderer/pepper/pepper_shared_memory_message_filter.cc",
@@ -208,7 +210,10 @@ source_set("qtwebengine_sources") {
          "//components/pdf/browser:browser",
          "//components/pdf/renderer:renderer",
          "//components/printing/browser",
-         "//components/printing/renderer",
+         "//components/printing/renderer"
+      ]
+      sources += [
+         "//chrome/browser/extensions/api/streams_private/streams_private_api.cc",
       ]
   }
 

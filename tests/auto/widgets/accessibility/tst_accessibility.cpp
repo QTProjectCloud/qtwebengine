@@ -18,7 +18,7 @@
 */
 
 #include <qtest.h>
-#include "../util.h"
+#include <util.h>
 
 #include <QHBoxLayout>
 #include <QMainWindow>
@@ -77,11 +77,10 @@ void tst_Accessibility::noPage()
     QWebEngineView webView;
     webView.show();
 
-    QTest::qWait(1000);
-    QAccessibleInterface *view = QAccessible::queryAccessibleInterface(&webView);
-    QVERIFY(view);
+    QAccessibleInterface *view = nullptr;
+    QTRY_VERIFY((view = QAccessible::queryAccessibleInterface(&webView)));
     QCOMPARE(view->role(), QAccessible::Client);
-    QCOMPARE(view->childCount(), 1);
+    QTRY_COMPARE(view->childCount(), 1);
     QAccessibleInterface *document = view->child(0);
     QCOMPARE(document->role(), QAccessible::WebDocument);
     QCOMPARE(document->parent(), view);
@@ -404,8 +403,10 @@ void tst_Accessibility::roles_data()
     QTest::newRow("ax::mojom::Role::kDocEpilogue") << QString("<div role='doc-epilogue'></div>") << 0 << QAccessible::Section;
     QTest::newRow("ax::mojom::Role::kDocErrata") << QString("<div role='doc-errata'></div>") << 0 << QAccessible::Section;
     QTest::newRow("ax::mojom::Role::kDocExample") << QString("<div role='doc-example'></div>") << 0 << QAccessible::Section;
+    QTest::newRow("ax::mojom::Role::kDocFooter") << QString("<section role='doc-pagefooter'>a</section>") << 0 << QAccessible::Footer;
     QTest::newRow("ax::mojom::Role::kDocForeword") << QString("<div role='doc-foreword'></div>") << 0 << QAccessible::Section;
     QTest::newRow("ax::mojom::Role::kDocGlossary") << QString("<div role='doc-glossary'></div>") << 0 << QAccessible::Section;
+    QTest::newRow("ax::mojom::Role::kDocHeader") << QString("<section role='doc-pageheader'>a</section>") << 0 << QAccessible::Heading;
     QTest::newRow("ax::mojom::Role::kDocIndex") << QString("<div role='doc-index'></div>") << 0 << QAccessible::Section;
     QTest::newRow("ax::mojom::Role::kDocIntroduction") << QString("<div role='doc-introduction'></div>") << 0 << QAccessible::Section;
     QTest::newRow("ax::mojom::Role::kDocNotice") << QString("<div role='doc-notice'></div>") << 0 << QAccessible::Section;
@@ -424,7 +425,7 @@ void tst_Accessibility::roles_data()
     QTest::newRow("ax::mojom::Role::kFeed") << QString("<div role='feed'>a</div>") << 0 << QAccessible::Section;
     QTest::newRow("ax::mojom::Role::kFigcaption") << QString("<figcaption>a</figcaption>") << 0 << QAccessible::Heading;
     QTest::newRow("ax::mojom::Role::kFigure") << QString("<figure>a</figure>") << 0 << QAccessible::Section;
-    QTest::newRow("ax::mojom::Role::kFooter") << QString("<footer>a</footer>") << 0 << QAccessible::Footer;
+    QTest::newRow("ax::mojom::Role::kFooter") << QString("<footer>a</footer>") << 0 << QAccessible::Section;
     QTest::newRow("ax::mojom::Role::kFooterAsNonLandmark") << QString("<article><footer>a</footer><article>") << 1 << QAccessible::Section;
     QTest::newRow("ax::mojom::Role::kForm") << QString("<form></form>") << 0 << QAccessible::Form;
     QTest::newRow("ax::mojom::Role::kGraphicsDocument") << QString("<div role='graphics-document'></div>") << 0 << QAccessible::Document;

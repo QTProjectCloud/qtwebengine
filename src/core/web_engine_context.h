@@ -97,10 +97,6 @@ class ProfileAdapter;
 
 bool usingSoftwareDynamicGL();
 
-#ifdef Q_OS_WIN
-Q_WEBENGINECORE_PRIVATE_EXPORT sandbox::SandboxInterfaceInfo *staticSandboxInterfaceInfo(sandbox::SandboxInterfaceInfo *info = nullptr);
-#endif
-
 typedef std::tuple<bool, QString, QString> ProxyAuthentication;
 
 class WebEngineContext : public base::RefCounted<WebEngineContext> {
@@ -108,6 +104,7 @@ public:
     static WebEngineContext *current();
     static void destroyContextPostRoutine();
     static ProxyAuthentication qProxyNetworkAuthentication(QString host, int port);
+    static void flushMessages();
 
     ProfileAdapter *createDefaultProfileAdapter();
     ProfileAdapter *defaultProfileAdapter();

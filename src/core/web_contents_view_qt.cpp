@@ -46,7 +46,6 @@
 #include "render_widget_host_view_qt.h"
 #include "touch_selection_controller_client_qt.h"
 #include "type_conversion.h"
-#include "web_contents_adapter_client.h"
 #include "web_contents_adapter.h"
 #include "web_engine_context.h"
 #include "web_contents_delegate_qt.h"
@@ -157,11 +156,6 @@ void WebContentsViewQt::SetInitialFocus()
 void WebContentsViewQt::FocusThroughTabTraversal(bool reverse)
 {
     content::WebContentsImpl *web_contents = static_cast<content::WebContentsImpl*>(m_webContents);
-    content::RenderWidgetHostView *fullscreen_view = web_contents->GetFullscreenRenderWidgetHostView();
-    if (fullscreen_view) {
-        fullscreen_view->Focus();
-        return;
-    }
     web_contents->GetRenderViewHost()->SetInitialFocus(reverse);
 }
 
@@ -209,7 +203,7 @@ ASSERT_ENUMS_MATCH(QWebEngineContextMenuRequest::CanSelectAll, blink::kCanSelect
 ASSERT_ENUMS_MATCH(QWebEngineContextMenuRequest::CanTranslate, blink::kCanTranslate)
 ASSERT_ENUMS_MATCH(QWebEngineContextMenuRequest::CanEditRichly, blink::kCanEditRichly)
 
-
+// static
 void WebContentsViewQt::update(QWebEngineContextMenuRequest *request,
                                const content::ContextMenuParams &params, bool spellcheckEnabled)
 {

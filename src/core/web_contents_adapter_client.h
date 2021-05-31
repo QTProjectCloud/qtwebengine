@@ -51,7 +51,7 @@
 #ifndef WEB_CONTENTS_ADAPTER_CLIENT_H
 #define WEB_CONTENTS_ADAPTER_CLIENT_H
 
-#include "qtwebenginecoreglobal_p.h"
+#include <QtWebEngineCore/private/qtwebenginecoreglobal_p.h>
 
 #include "profile_adapter.h"
 
@@ -69,7 +69,7 @@ QT_FORWARD_DECLARE_CLASS(QWebEngineRegisterProtocolHandlerRequest)
 QT_FORWARD_DECLARE_CLASS(QWebEngineUrlRequestInfo)
 QT_FORWARD_DECLARE_CLASS(QWebEngineUrlRequestInterceptor)
 QT_FORWARD_DECLARE_CLASS(QWebEngineContextMenuRequest)
-QT_FORWARD_DECLARE_CLASS(QWebEngineCertificateError);
+QT_FORWARD_DECLARE_CLASS(QWebEngineCertificateError)
 QT_FORWARD_DECLARE_CLASS(QWebEngineSettings)
 
 namespace content {
@@ -195,8 +195,7 @@ public:
     virtual void loadStarted(const QUrl &provisionalUrl, bool isErrorPage = false) = 0;
     virtual void loadCommitted() = 0;
     virtual void didFirstVisuallyNonEmptyPaint() = 0;
-    virtual void loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode,
-                              const QString &errorDescription, bool triggersErrorPage) = 0;
+    virtual void loadFinished(bool success, const QUrl &url, bool isErrorPage, int errorCode, const QString &errorDescription) = 0;
     virtual void focusContainer() = 0;
     virtual void unhandledKeyEvent(QKeyEvent *event) = 0;
     virtual QSharedPointer<WebContentsAdapter>

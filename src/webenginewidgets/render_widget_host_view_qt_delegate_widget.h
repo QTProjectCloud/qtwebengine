@@ -65,7 +65,7 @@ namespace QtWebEngineCore {
 class RenderWidgetHostViewQtDelegateWidget : public QQuickWidget, public RenderWidgetHostViewQtDelegate {
     Q_OBJECT
 public:
-    RenderWidgetHostViewQtDelegateWidget(RenderWidgetHostViewQtDelegateClient *client, QWidget *parent = 0);
+    RenderWidgetHostViewQtDelegateWidget(RenderWidgetHostViewQtDelegateClient *client, QWidget *parent = nullptr);
     ~RenderWidgetHostViewQtDelegateWidget();
 
     void initAsPopup(const QRect&) override;
@@ -97,7 +97,7 @@ protected:
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
     void adapterClientChanged(WebContentsAdapterClient *client) override;
 
-private slots:
+private Q_SLOTS:
     void onWindowPosChanged();
     void connectRemoveParentBeforeParentDelete();
     void removeParentBeforeParentDelete();

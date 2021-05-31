@@ -49,28 +49,28 @@ TestWebEngineView {
             return success
         }
 
-        errorPage.onLoadingChanged: {
-            errorPageLoadStatus = loadRequest.status
+        errorPage.onLoadingChanged: function(load) {
+            errorPageLoadStatus = load.status
 
             loadRequestArray.push({
-               "status": loadRequest.status,
-               "url": loadRequest.url.toString(),
-               "errorDomain": loadRequest.errorDomain,
+               "status": load.status,
+               "url": load.url.toString(),
+               "errorDomain": load.errorDomain,
                "isErrorPage": true
             })
         }
     }
 
-    onLoadingChanged: {
-        if (loadRequest.status == WebEngineView.LoadFailedStatus) {
-            test.compare(loadRequest.url, unavailableUrl)
-            test.compare(loadRequest.errorDomain, WebEngineView.InternalErrorDomain)
+    onLoadingChanged: function(load) {
+        if (load.status == WebEngineView.LoadFailedStatus) {
+            test.compare(load.url, unavailableUrl)
+            test.compare(load.errorDomain, WebEngineView.InternalErrorDomain)
         }
 
         loadRequestArray.push({
-           "status": loadRequest.status,
-           "url": loadRequest.url.toString(),
-           "errorDomain": loadRequest.errorDomain,
+           "status": load.status,
+           "url": load.url.toString(),
+           "errorDomain": load.errorDomain,
            "isErrorPage": false
         })
     }
@@ -119,21 +119,22 @@ TestWebEngineView {
             verify(!loadRequest.isErrorPage)
 
             // Loading of the unavailableUrl must fail
-            loadRequest = loadRequestArray[1]
+            loadRequest = loadRequestArray[3]
             compare(loadRequest.status, WebEngineView.LoadFailedStatus)
             compare(loadRequest.errorDomain, WebEngineView.InternalErrorDomain)
             compare(loadRequest.url, unavailableUrl)
             verify(!loadRequest.isErrorPage)
 
+            // error page load is done inside main load through test support
             // Start to load error page
-            loadRequest = loadRequestArray[2]
+            loadRequest = loadRequestArray[1]
             compare(loadRequest.status, WebEngineView.LoadStartedStatus)
             compare(loadRequest.errorDomain, WebEngineView.NoErrorDomain)
             compare(loadRequest.url, "chrome-error://chromewebdata/")
             verify(loadRequest.isErrorPage)
 
             // Loading of the error page must be successful
-            loadRequest = loadRequestArray[3]
+            loadRequest = loadRequestArray[2]
             compare(loadRequest.status, WebEngineView.LoadSucceededStatus)
             compare(loadRequest.errorDomain, WebEngineView.NoErrorDomain)
             compare(loadRequest.url, "chrome-error://chromewebdata/")

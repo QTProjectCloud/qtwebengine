@@ -46,6 +46,7 @@
 #include "components/spellcheck/spellcheck_buildflags.h"
 #include "content/public/common/content_paths.h"
 #include "sandbox/policy/switches.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
 
@@ -79,7 +80,7 @@ QString fallbackDir() {
 #if defined(OS_MAC) && defined(QT_MAC_FRAMEWORK_BUILD)
 static inline CFBundleRef frameworkBundle()
 {
-    return CFBundleGetBundleWithIdentifier(CFSTR("org.qt-project.Qt.QtWebEngineCore"));
+    return CFBundleGetBundleWithIdentifier(CFSTR("org.qt-project.QtWebEngineCore"));
 }
 
 static QString getPath(CFBundleRef frameworkBundle)
@@ -168,6 +169,8 @@ QString subProcessPath()
                               % QStringLiteral("/Helpers/" QTWEBENGINEPROCESS_NAME ".app/Contents/MacOS/" QTWEBENGINEPROCESS_NAME);
 #else
             candidatePaths << QLibraryInfo::path(QLibraryInfo::LibraryExecutablesPath)
+                              % QLatin1Char('/') % processBinary;
+            candidatePaths << QLibraryInfo::path(QLibraryInfo::BinariesPath)
                               % QLatin1Char('/') % processBinary;
 #endif
             candidatePaths << QCoreApplication::applicationDirPath()
@@ -276,8 +279,6 @@ QString resourcesDataPath()
     static QString potentialResourcesPath =
 #if defined(OS_MAC) && defined(QT_MAC_FRAMEWORK_BUILD)
             getResourcesPath(frameworkBundle());
-#elif defined(OS_MAC)
-            QLibraryInfo::location(QLibraryInfo::DataPath) % QLatin1String("/Resources");
 #else
             QLibraryInfo::path(QLibraryInfo::DataPath) % QLatin1String("/resources");
 #endif
@@ -350,21 +351,26 @@ base::string16 WebEngineLibraryInfo::getApplicationName()
     return toString16(qApp->applicationName());
 }
 
+std::string WebEngineLibraryInfo::getResolvedLocale()
+{
+    base::CommandLine *parsedCommandLine = base::CommandLine::ForCurrentProcess();
+    if (parsedCommandLine->HasSwitch(switches::kLang)) {
+        return parsedCommandLine->GetSwitchValueASCII(switches::kLang);
+    } else {
+        const QString &locale = QLocale().bcp47Name();
+        std::string resolvedLocale;
+        if (l10n_util::CheckAndResolveLocale(locale.toStdString(), &resolvedLocale))
+            return resolvedLocale;
+    }
+    return "en-US";
+}
+
 std::string WebEngineLibraryInfo::getApplicationLocale()
 {
     base::CommandLine *parsedCommandLine = base::CommandLine::ForCurrentProcess();
-    if (!parsedCommandLine->HasSwitch(switches::kLang)) {
-        const QString &locale = QLocale().bcp47Name();
-
-        // QLocale::bcp47Name returns "en" for American English locale. Chromium requires the "US" suffix
-        // to clarify the dialect and ignores the shorter version.
-        if (locale == "en")
-            return "en-US";
-
-        return locale.toStdString();
-    }
-
-    return parsedCommandLine->GetSwitchValueASCII(switches::kLang);
+    return parsedCommandLine->HasSwitch(switches::kLang)
+        ? parsedCommandLine->GetSwitchValueASCII(switches::kLang)
+        : QLocale().bcp47Name().toStdString();
 }
 
 #if defined(OS_WIN)

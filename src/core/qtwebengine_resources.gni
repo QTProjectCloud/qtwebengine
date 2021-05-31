@@ -22,6 +22,7 @@ repack("qtwebengine_repack_resources") {
   sources = [
     "$root_gen_dir/qtwebengine/qt_webengine_resources.pak",
     "$root_gen_dir/chrome/common_resources.pak",
+    "$root_gen_dir/chrome/net_internals_resources.pak",
     "$root_gen_dir/chrome/quota_internals_resources.pak",
     "$root_gen_dir/components/components_resources.pak",
     "$root_gen_dir/components/dev_ui_components_resources.pak",
@@ -33,10 +34,12 @@ repack("qtwebengine_repack_resources") {
     "$root_gen_dir/net/net_resources.pak",
     "$root_gen_dir/third_party/blink/public/resources/blink_resources.pak",
     "$root_gen_dir/ui/resources/webui_resources.pak",
+    "$root_gen_dir/ui/resources/webui_generated_resources.pak",
   ]
   output = "$root_out_dir/qtwebengine_resources.pak"
   deps = [
      "//qtwebengine/browser:qt_webengine_resources",
+     "//chrome/browser/resources/net_internals:net_internals_resources",
      "//chrome/browser/resources/quota_internals:quota_internals_resources",
      "//chrome/common:resources_grit",
      "//components/resources:components_resources_grit",
@@ -49,6 +52,7 @@ repack("qtwebengine_repack_resources") {
      "//net:net_resources_grit",
      "//third_party/blink/public:resources_grit",
      "//ui/resources:webui_resources_grd_grit",
+     "//ui/resources:webui_generated_resources_grd",
   ]
 
   if (enable_extensions) {
@@ -138,10 +142,12 @@ repack("qtwebengine_repack_resources_200") {
 repack("qtwebengine_repack_resources_devtools") {
   sources = [
     "$root_gen_dir/content/browser/devtools/devtools_resources.pak",
+    "$root_gen_dir/third_party/blink/public/resources/inspector_overlay_resources.pak",
   ]
   output = "$root_out_dir/qtwebengine_devtools_resources.pak"
   deps = [
     "//content/browser/devtools:devtools_resources_grit",
+    "//third_party/blink/public:devtools_inspector_resources",
   ]
 }
 

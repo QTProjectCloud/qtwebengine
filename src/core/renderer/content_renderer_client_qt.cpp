@@ -90,11 +90,12 @@
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "common/extensions/extensions_client_qt.h"
 #include "extensions/extensions_renderer_client_qt.h"
+#include "extensions/renderer/guest_view/mime_handler_view/mime_handler_view_container_manager.h"
+#include "mojo/public/cpp/bindings/associated_remote.h"
 #endif //ENABLE_EXTENSIONS
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "plugins/loadable_plugin_placeholder_qt.h"
-#include "plugins/plugin_placeholder_qt.h"
 #include "content/common/frame_messages.h"
 #endif // ENABLE_PLUGINS
 
@@ -116,6 +117,8 @@
 #include "chrome/renderer/media/webrtc_logging_agent_impl.h"
 #endif
 
+#include "web_engine_library_info.h"
+
 namespace QtWebEngineCore {
 
 static const char kHttpErrorDomain[] = "http";
@@ -132,6 +135,7 @@ ContentRendererClientQt::~ContentRendererClientQt() {}
 
 void ContentRendererClientQt::RenderThreadStarted()
 {
+    base::i18n::SetICUDefaultLocale(WebEngineLibraryInfo::getApplicationLocale());
     content::RenderThread *renderThread = content::RenderThread::Get();
     m_renderConfiguration.reset(new RenderConfiguration());
     m_userResourceController.reset(new UserResourceController());
@@ -219,6 +223,11 @@ void ContentRendererClientQt::RenderFrameCreated(content::RenderFrame *render_fr
     new printing::PrintRenderFrameHelper(render_frame, base::WrapUnique(new PrintWebViewHelperDelegateQt()));
 #endif // QT_CONFIG(webengine_printing_and_pdf)
 #if BUILDFLAG(ENABLE_EXTENSIONS)
+    blink::AssociatedInterfaceRegistry *associated_interfaces = render_frame_observer->associatedInterfaces();
+    associated_interfaces->AddInterface(base::BindRepeating(
+        &extensions::MimeHandlerViewContainerManager::BindReceiver,
+        render_frame->GetRoutingID()));
+
     auto registry = std::make_unique<service_manager::BinderRegistry>();
     ExtensionsRendererClientQt::GetInstance()->RenderFrameCreated(render_frame, render_frame_observer->registry());
 #endif
@@ -255,16 +264,6 @@ void ContentRendererClientQt::RunScriptsAtDocumentIdle(content::RenderFrame *ren
 #endif
 }
 
-bool ContentRendererClientQt::HasErrorPage(int httpStatusCode)
-{
-    // Use an internal error page, if we have one for the status code.
-    if (!error_page::LocalizedError::HasStrings(error_page::Error::kHttpErrorDomain, httpStatusCode)) {
-        return false;
-    }
-
-    return true;
-}
-
 // To tap into the chromium localized strings. Ripped from the chrome layer (highly simplified).
 void ContentRendererClientQt::PrepareErrorPage(content::RenderFrame *renderFrame,
                                                const blink::WebURLError &web_error,
@@ -278,13 +277,13 @@ void ContentRendererClientQt::PrepareErrorPage(content::RenderFrame *renderFrame
 }
 
 void ContentRendererClientQt::PrepareErrorPageForHttpStatusError(content::RenderFrame *renderFrame,
-                                                                 const GURL &unreachable_url,
+                                                                 const blink::WebURLError &error,
                                                                  const std::string &httpMethod,
                                                                  int http_status,
                                                                  std::string *errorHtml)
 {
     GetNavigationErrorStringsInternal(renderFrame, httpMethod,
-                                      error_page::Error::HttpError(unreachable_url, http_status),
+                                      error_page::Error::HttpError(error.url(), http_status),
                                       errorHtml);
 }
 
@@ -336,6 +335,30 @@ std::unique_ptr<blink::WebPrescientNetworking> ContentRendererClientQt::CreatePr
     return std::make_unique<network_hints::WebPrescientNetworkingImpl>(render_frame);
 }
 
+bool ContentRendererClientQt::IsPluginHandledExternally(content::RenderFrame *render_frame,
+                                   const blink::WebElement &plugin_element,
+                                   const GURL &original_url,
+                                   const std::string &original_mime_type)
+{
+#if BUILDFLAG(ENABLE_EXTENSIONS) && BUILDFLAG(ENABLE_PLUGINS)
+    bool found = false;
+    content::WebPluginInfo plugin_info;
+    std::string mime_type;
+
+    render_frame->Send(new FrameHostMsg_GetPluginInfo(render_frame->GetRoutingID(), original_url,
+                                                      render_frame->GetWebFrame()->Top()->GetSecurityOrigin(),
+                                                      original_mime_type, &found, &plugin_info, &mime_type));
+
+    return extensions::MimeHandlerViewContainerManager::Get(
+                content::RenderFrame::FromWebFrame(
+                    plugin_element.GetDocument().GetFrame()),
+                true /* create_if_does_not_exist */)
+                    ->CreateFrameContainer(plugin_element, original_url, mime_type, plugin_info);
+#else
+    return false;
+#endif
+}
+
 bool ContentRendererClientQt::OverrideCreatePlugin(content::RenderFrame *render_frame,
                                                    const blink::WebPluginParams &params,
                                                    blink::WebPlugin **plugin)
@@ -346,7 +369,6 @@ bool ContentRendererClientQt::OverrideCreatePlugin(content::RenderFrame *render_
 #endif //ENABLE_EXTENSIONS
 
 #if BUILDFLAG(ENABLE_PLUGINS)
-    chrome::mojom::PluginInfoPtr plugin_info = chrome::mojom::PluginInfo::New();
     content::WebPluginInfo info;
     std::string mime_type;
     bool found = false;
@@ -354,30 +376,18 @@ bool ContentRendererClientQt::OverrideCreatePlugin(content::RenderFrame *render_
     render_frame->Send(new FrameHostMsg_GetPluginInfo(render_frame->GetRoutingID(), params.url,
                                                       render_frame->GetWebFrame()->Top()->GetSecurityOrigin(),
                                                       params.mime_type.Utf8(), &found, &info, &mime_type));
-    if (!found) {
-        *plugin = CreatePlugin(render_frame, params, *plugin_info);
-        return true;
-    }
+    if (!found)
+        *plugin = LoadablePluginPlaceholderQt::CreateLoadableMissingPlugin(render_frame, params)->plugin();
+    else
+        *plugin = render_frame->CreatePlugin(info, params);
 #endif  // BUILDFLAG(ENABLE_PLUGINS)
-    return content::ContentRendererClient::OverrideCreatePlugin(render_frame, params, plugin);
+    return true;
 }
 
 bool ContentRendererClientQt::IsOriginIsolatedPepperPlugin(const base::FilePath& plugin_path)
 {
-    return plugin_path.value() == FILE_PATH_LITERAL("internal-pdf-viewer/");
+    return plugin_path.value() == FILE_PATH_LITERAL("internal-pdf-viewer");
 }
-
-#if BUILDFLAG(ENABLE_PLUGINS)
-// static
-blink::WebPlugin* ContentRendererClientQt::CreatePlugin(content::RenderFrame* render_frame,
-                                                        const blink::WebPluginParams& original_params,
-                                                        const chrome::mojom::PluginInfo& plugin_info)
-{
-    // If the browser plugin is to be enabled, this should be handled by the
-    // renderer, so the code won't reach here due to the early exit in OverrideCreatePlugin.
-    return LoadablePluginPlaceholderQt::CreateLoadableMissingPlugin(render_frame, original_params)->plugin();
-}
-#endif  //BUILDFLAG(ENABLE_PLUGINS)
 
 #if QT_CONFIG(webengine_webrtc) && QT_CONFIG(webengine_extensions)
 chrome::WebRtcLoggingAgentImpl *ContentRendererClientQt::GetWebRtcLoggingAgent()
@@ -614,12 +624,6 @@ void ContentRendererClientQt::WillSendRequest(blink::WebLocalFrame *frame,
     if (!new_url->is_empty())
         return;
 #endif
-}
-
-bool ContentRendererClientQt::RequiresWebComponentsV0(const GURL &url)
-{
-    Q_UNUSED(url);
-    return false;
 }
 
 } // namespace QtWebEngineCore
